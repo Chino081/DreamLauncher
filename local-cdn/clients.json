@@ -1,7 +1,7 @@
 {
   "launcherVersion": "0.1.0",
-  "announcementUrl": "file:///F:/Chino/DreamtcTamracLauncherNew/local-cdn/announcement.json",
-  "javaRuntimesUrl": "file:///F:/Chino/DreamtcTamracLauncherNew/local-cdn/java-runtimes.json",
+  "announcementUrl": "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/announcement.json",
+  "javaRuntimesUrl": "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/java-runtimes.json",
   "clients": [
     {
       "id": "survival",

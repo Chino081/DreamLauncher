@@ -153,6 +153,7 @@ public sealed class MinecraftLaunchService
         var mainClass = ReadString(root, "mainClass")
             ?? throw new InvalidDataException("版本 JSON 缺少 mainClass。");
         var assetIndex = ReadAssetIndex(root);
+        var librariesDirectory = Path.Combine(minecraftDirectory, "libraries");
         var classpath = BuildClasspath(minecraftDirectory, versionId, root);
 
         if (classpath.Count == 0)
@@ -188,6 +189,8 @@ public sealed class MinecraftLaunchService
             ["launcher_name"] = "DreamLauncher",
             ["launcher_version"] = "0.1.0",
             ["natives_directory"] = nativesDirectory,
+            ["library_directory"] = librariesDirectory,
+            ["classpath_separator"] = Path.PathSeparator.ToString(),
             ["classpath"] = string.Join(Path.PathSeparator, classpath)
         };
 

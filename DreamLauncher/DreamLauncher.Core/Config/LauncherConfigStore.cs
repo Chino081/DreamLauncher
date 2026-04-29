@@ -9,6 +9,12 @@ public sealed class LauncherConfigStore
     public const string FixedClientsManifestUrl =
         "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/clients.json";
 
+    public const string FixedJavaRuntimesManifestUrl =
+        "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/java-runtimes.json";
+
+    public const string FixedAnnouncementUrl =
+        "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/announcement.json";
+
     private readonly LauncherPaths _paths;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -86,6 +92,8 @@ public sealed class LauncherConfigStore
     {
         var changed = false;
         changed |= SetIfDifferent(config.ClientsManifestUrl, FixedClientsManifestUrl, value => config.ClientsManifestUrl = value);
+        changed |= SetIfDifferent(config.JavaRuntimesManifestUrl, FixedJavaRuntimesManifestUrl, value => config.JavaRuntimesManifestUrl = value);
+        changed |= SetIfDifferent(config.AnnouncementUrl, FixedAnnouncementUrl, value => config.AnnouncementUrl = value);
         return changed;
     }
 

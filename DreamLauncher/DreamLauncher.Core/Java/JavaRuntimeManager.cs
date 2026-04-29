@@ -83,8 +83,12 @@ public sealed partial class JavaRuntimeManager
         int requiredMajorVersion,
         CancellationToken cancellationToken)
     {
+        var paths = await Task.Run(
+            () => DiscoverInstalledJavaExecutables().Take(60).ToArray(),
+            cancellationToken);
+
         var candidates = new List<JavaRuntimeInfo>();
-        foreach (var path in DiscoverInstalledJavaExecutables().Take(60))
+        foreach (var path in paths)
         {
             var version = await ProbeJavaMajorVersionAsync(path, cancellationToken);
             if (version < requiredMajorVersion)
@@ -110,6 +114,7 @@ public sealed partial class JavaRuntimeManager
     {
         var paths = new HashSet<string>(PathComparer);
         AddJavaCandidate(paths, Environment.GetEnvironmentVariable("JAVA_HOME"));
+        AddJavaCandidate(paths, Environment.GetEnvironmentVariable("JDK_HOME"));
 
         foreach (var programFiles in new[]
                  {
@@ -122,7 +127,7 @@ public sealed partial class JavaRuntimeManager
                 continue;
             }
 
-            foreach (var vendorDirectory in new[] { "Zulu", "Java", "Eclipse Adoptium", "Microsoft" })
+            foreach (var vendorDirectory in new[] { "Zulu", "Java", "Eclipse Adoptium", "Microsoft", "BellSoft", "Amazon Corretto" })
             {
                 var directory = Path.Combine(programFiles, vendorDirectory);
                 if (!Directory.Exists(directory))
@@ -130,9 +135,10 @@ public sealed partial class JavaRuntimeManager
                     continue;
                 }
 
-                foreach (var javaPath in SafeEnumerateJavaExecutables(directory).Take(30))
+                AddJavaCandidate(paths, directory);
+                foreach (var javaHome in SafeEnumerateDirectories(directory).Take(80))
                 {
-                    AddJavaCandidate(paths, javaPath);
+                    AddJavaCandidate(paths, javaHome);
                 }
             }
         }
@@ -140,11 +146,11 @@ public sealed partial class JavaRuntimeManager
         return paths;
     }
 
-    private static IEnumerable<string> SafeEnumerateJavaExecutables(string directory)
+    private static IEnumerable<string> SafeEnumerateDirectories(string directory)
     {
         try
         {
-            return Directory.EnumerateFiles(directory, "java.exe", SearchOption.AllDirectories).ToArray();
+            return Directory.EnumerateDirectories(directory).ToArray();
         }
         catch
         {
@@ -279,9 +285,13 @@ public sealed partial class JavaRuntimeManager
         string javaPath,
         CancellationToken cancellationToken)
     {
+        Process? process = null;
         try
         {
-            using var process = new Process();
+            using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCancellation.CancelAfter(TimeSpan.FromSeconds(5));
+
+            process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
                 FileName = javaPath,
@@ -293,16 +303,36 @@ public sealed partial class JavaRuntimeManager
             };
 
             process.Start();
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCancellation.Token);
+            var errorTask = process.StandardError.ReadToEndAsync(timeoutCancellation.Token);
+            await process.WaitForExitAsync(timeoutCancellation.Token);
 
             var versionText = await outputTask + await errorTask;
             return ParseJavaMajorVersion(versionText);
         }
         catch
         {
+            TryKillProcess(process);
             return 0;
+        }
+        finally
+        {
+            process?.Dispose();
+        }
+    }
+
+    private static void TryKillProcess(Process? process)
+    {
+        try
+        {
+            if (process is { HasExited: false })
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup for broken Java executables.
         }
     }
 

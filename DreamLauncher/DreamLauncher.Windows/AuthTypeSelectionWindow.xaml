@@ -71,6 +71,13 @@
                                 <Setter TargetName="IconShell" Property="Background" Value="{StaticResource Accent}" />
                                 <Setter TargetName="IconShell" Property="BorderBrush" Value="#FF9DCC" />
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.48" />
+                                <Setter TargetName="Root" Property="Background" Value="#30364B" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#474E63" />
+                                <Setter TargetName="IconShell" Property="Background" Value="#343A4F" />
+                                <Setter TargetName="IconShell" Property="BorderBrush" Value="#555C70" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -123,11 +130,13 @@
                                  Content="第三方验证"
                                  Tag="3"
                                  Style="{StaticResource AuthOptionRadio}"
+                                 IsEnabled="False"
                                  Checked="AuthRadio_Checked" />
                     <RadioButton x:Name="OfflineRadio"
                                  Content="离线验证"
                                  Tag="∞"
                                  Style="{StaticResource AuthOptionRadio}"
+                                 IsEnabled="False"
                                  Checked="AuthRadio_Checked" />
                 </StackPanel>
 

@@ -103,12 +103,14 @@
         </Style>
     </Window.Resources>
 
-    <Border CornerRadius="22"
+    <Border x:Name="ShellBorder"
+            CornerRadius="22"
             BorderBrush="#2E3850"
             BorderThickness="1"
             Background="{StaticResource ShellBrush}"
             ClipToBounds="True">
-        <Grid>
+        <Grid x:Name="ShellContent"
+              SizeChanged="ShellContent_SizeChanged">
             <Ellipse Width="430" Height="430" Fill="#7C4576" Opacity="0.2"
                      HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-170,-170,0,0" />
             <Ellipse Width="330" Height="330" Fill="#6E5BB8" Opacity="0.18"
@@ -448,13 +450,15 @@
                                                                   Background="{StaticResource PanelBackgroundAlt}"
                                                                   BorderBrush="{StaticResource StrokeSoft}"
                                                                   SelectionChanged="JavaRuntimeComboBox_SelectionChanged" />
-                                                        <Button Grid.Row="2"
+                                                        <Button x:Name="AutoDetectJavaButton"
+                                                                Grid.Row="2"
                                                                 Grid.Column="1"
                                                                 Content="自动检测"
                                                                 Style="{StaticResource PrimaryButton}"
                                                                 Margin="12,0,0,0"
                                                                 Click="AutoDetectJava_Click" />
-                                                        <Button Grid.Row="2"
+                                                        <Button x:Name="AddJavaRuntimeButton"
+                                                                Grid.Row="2"
                                                                 Grid.Column="2"
                                                                 Content="添加"
                                                                 Style="{StaticResource SecondaryButton}"

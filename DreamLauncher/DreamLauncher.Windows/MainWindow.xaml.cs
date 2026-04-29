@@ -30,8 +30,10 @@ public partial class MainWindow : Window
     private readonly AccountManager _accountManager;
     private readonly JavaRuntimeManager _javaRuntimeManager;
     private readonly MainWindowViewModel _viewModel;
+    private CancellationTokenSource? _javaRuntimeRefreshCancellation;
     private bool _isUpdatingJavaRuntimeOptions;
     private bool _isUpdatingMemoryOptions;
+    private int _javaRuntimeRefreshRequestId;
 
     public MainWindow()
     {
@@ -320,70 +322,106 @@ public partial class MainWindow : Window
 
     private async Task RefreshJavaRuntimeOptionsAsync(LauncherConfig? config = null)
     {
-        config ??= await _configStore.LoadAsync();
-        var selectedClient = _viewModel.SelectedClient;
-        var requiredVersion = selectedClient?.Installation.Definition.JavaVersion ?? 17;
-        var clientName = selectedClient?.Name ?? "未选择客户端";
-        var clientSettings = selectedClient is null
-            ? null
-            : config.ClientSettings.GetValueOrDefault(selectedClient.Id);
-        var manualJavaPath = clientSettings?.JavaPath;
+        var refreshId = Interlocked.Increment(ref _javaRuntimeRefreshRequestId);
+        _javaRuntimeRefreshCancellation?.Cancel();
+        var refreshCancellation = new CancellationTokenSource();
+        _javaRuntimeRefreshCancellation = refreshCancellation;
+        var cancellationToken = refreshCancellation.Token;
 
-        var recommended = await _javaRuntimeManager.ResolveAsync(requiredVersion, null);
-        var options = new List<JavaRuntimeOption>
-        {
-            new()
-            {
-                DisplayName = recommended is null
-                    ? $"自动选择（未找到 Java {requiredVersion} 或更高版本）"
-                    : $"自动选择（当前推荐：{recommended.JavaPath}）",
-                IsAutomatic = true
-            }
-        };
+        SetJavaDetectionControlsEnabled(false);
 
-        foreach (var option in await DiscoverJavaRuntimeOptionsAsync(requiredVersion))
-        {
-            if (options.Any(item =>
-                    !item.IsAutomatic &&
-                    string.Equals(item.JavaPath, option.JavaPath, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            options.Add(option);
-        }
-
-        if (!string.IsNullOrWhiteSpace(manualJavaPath) &&
-            options.All(item => !string.Equals(item.JavaPath, manualJavaPath, StringComparison.OrdinalIgnoreCase)))
-        {
-            var manualVersion = await _javaRuntimeManager.ProbeJavaMajorVersionForPathAsync(manualJavaPath);
-            var isCompatible = manualVersion >= requiredVersion;
-            options.Add(new JavaRuntimeOption
-            {
-                DisplayName = $"手动指定 | {FormatJavaVersion(manualVersion)} | {manualJavaPath}{FormatCompatibilitySuffix(isCompatible, requiredVersion)}",
-                JavaPath = manualJavaPath,
-                MajorVersion = manualVersion,
-                IsCompatible = isCompatible
-            });
-        }
-
-        _isUpdatingJavaRuntimeOptions = true;
         try
         {
-            JavaRuntimeComboBox.ItemsSource = options;
-            JavaRuntimeComboBox.SelectedItem = string.IsNullOrWhiteSpace(manualJavaPath)
-                ? options.First()
-                : options.FirstOrDefault(item => string.Equals(item.JavaPath, manualJavaPath, StringComparison.OrdinalIgnoreCase))
-                  ?? options.First();
+            JavaRuntimeStatusTextBlock.Text = "正在后台检测 Java 环境...";
+            await Task.Yield();
+
+            config ??= await _configStore.LoadAsync(cancellationToken);
+            var selectedClient = _viewModel.SelectedClient;
+            var requiredVersion = selectedClient?.Installation.Definition.JavaVersion ?? 17;
+            var clientName = selectedClient?.Name ?? "未选择客户端";
+            var clientSettings = selectedClient is null
+                ? null
+                : config.ClientSettings.GetValueOrDefault(selectedClient.Id);
+            var manualJavaPath = clientSettings?.JavaPath;
+
+            var recommendedTask = _javaRuntimeManager.ResolveAsync(requiredVersion, null, cancellationToken);
+            var discoveredTask = DiscoverJavaRuntimeOptionsAsync(requiredVersion, cancellationToken);
+
+            var recommended = await recommendedTask;
+            var options = new List<JavaRuntimeOption>
+            {
+                new()
+                {
+                    DisplayName = recommended is null
+                        ? $"自动选择（未找到 Java {requiredVersion} 或更高版本）"
+                        : $"自动选择（当前推荐：{recommended.JavaPath}）",
+                    IsAutomatic = true
+                }
+            };
+
+            foreach (var option in await discoveredTask)
+            {
+                if (options.Any(item =>
+                        !item.IsAutomatic &&
+                        string.Equals(item.JavaPath, option.JavaPath, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                options.Add(option);
+            }
+
+            if (!string.IsNullOrWhiteSpace(manualJavaPath) &&
+                options.All(item => !string.Equals(item.JavaPath, manualJavaPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                var manualVersion = await _javaRuntimeManager.ProbeJavaMajorVersionForPathAsync(manualJavaPath, cancellationToken);
+                var isCompatible = manualVersion >= requiredVersion;
+                options.Add(new JavaRuntimeOption
+                {
+                    DisplayName = $"手动指定 | {FormatJavaVersion(manualVersion)} | {manualJavaPath}{FormatCompatibilitySuffix(isCompatible, requiredVersion)}",
+                    JavaPath = manualJavaPath,
+                    MajorVersion = manualVersion,
+                    IsCompatible = isCompatible
+                });
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (refreshId != _javaRuntimeRefreshRequestId)
+            {
+                return;
+            }
+
+            _isUpdatingJavaRuntimeOptions = true;
+            try
+            {
+                JavaRuntimeComboBox.ItemsSource = options;
+                JavaRuntimeComboBox.SelectedItem = string.IsNullOrWhiteSpace(manualJavaPath)
+                    ? options.First()
+                    : options.FirstOrDefault(item => string.Equals(item.JavaPath, manualJavaPath, StringComparison.OrdinalIgnoreCase))
+                      ?? options.First();
+            }
+            finally
+            {
+                _isUpdatingJavaRuntimeOptions = false;
+            }
+
+            JavaRuntimeStatusTextBlock.Text = selectedClient is null
+                ? "当前未选择客户端，自动选择暂按 Java 17 检测。"
+                : $"当前客户端：{clientName}，需要 Java {requiredVersion}。自动选择会优先使用启动器私有 Java，再尝试系统 Java。";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         finally
         {
-            _isUpdatingJavaRuntimeOptions = false;
-        }
+            if (refreshId == _javaRuntimeRefreshRequestId)
+            {
+                SetJavaDetectionControlsEnabled(true);
+                _javaRuntimeRefreshCancellation = null;
+            }
 
-        JavaRuntimeStatusTextBlock.Text = selectedClient is null
-            ? "当前未选择客户端，自动选择暂按 Java 17 检测。"
-            : $"当前客户端：{clientName}，需要 Java {requiredVersion}。自动选择会优先使用启动器私有 Java，再尝试系统 Java。";
+            refreshCancellation.Dispose();
+        }
     }
 
     private async Task RefreshMemoryOptionsAsync(LauncherConfig? config = null)
@@ -503,46 +541,67 @@ public partial class MainWindow : Window
         return memoryMb;
     }
 
-    private async Task<IReadOnlyList<JavaRuntimeOption>> DiscoverJavaRuntimeOptionsAsync(int requiredVersion)
+    private void SetJavaDetectionControlsEnabled(bool isEnabled)
+    {
+        JavaRuntimeComboBox.IsEnabled = isEnabled;
+        AutoDetectJavaButton.IsEnabled = isEnabled;
+        AddJavaRuntimeButton.IsEnabled = isEnabled;
+    }
+
+    private Task<IReadOnlyList<JavaRuntimeOption>> DiscoverJavaRuntimeOptionsAsync(
+        int requiredVersion,
+        CancellationToken cancellationToken)
+    {
+        return Task.Run<IReadOnlyList<JavaRuntimeOption>>(async () =>
+        {
+            var paths = DiscoverJavaCandidatePaths(requiredVersion);
+            var options = new List<JavaRuntimeOption>();
+            foreach (var path in paths.Take(40))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var version = await _javaRuntimeManager.ProbeJavaMajorVersionForPathAsync(path, cancellationToken).ConfigureAwait(false);
+                if (version <= 0)
+                {
+                    continue;
+                }
+
+                var isCompatible = version >= requiredVersion;
+                options.Add(new JavaRuntimeOption
+                {
+                    DisplayName = $"{GetJavaDisplayName(path, version)} | x64 | {path}{FormatCompatibilitySuffix(isCompatible, requiredVersion)}",
+                    JavaPath = path,
+                    MajorVersion = version,
+                    IsCompatible = isCompatible
+                });
+            }
+
+            return options
+                .OrderByDescending(option => option.IsCompatible)
+                .ThenByDescending(option => option.MajorVersion)
+                .ThenBy(option => option.JavaPath, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }, cancellationToken);
+    }
+
+    private string[] DiscoverJavaCandidatePaths(int requiredVersion)
     {
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         AddJavaCandidate(paths, Environment.GetEnvironmentVariable("JAVA_HOME"));
+        AddJavaCandidate(paths, Environment.GetEnvironmentVariable("JDK_HOME"));
         AddJavaCandidate(paths, _javaRuntimeManager.GetPrivateJavaExecutablePath(requiredVersion));
 
         if (Directory.Exists(_paths.JavaRuntimePath))
         {
-            foreach (var javaPath in Directory.EnumerateFiles(_paths.JavaRuntimePath, "java.exe", SearchOption.AllDirectories))
+            AddJavaCandidate(paths, _paths.JavaRuntimePath);
+            foreach (var javaHome in SafeEnumerateDirectories(_paths.JavaRuntimePath).Take(40))
             {
-                AddJavaCandidate(paths, javaPath);
+                AddJavaCandidate(paths, javaHome);
             }
         }
 
         AddProgramFilesJavaCandidates(paths);
-
-        var options = new List<JavaRuntimeOption>();
-        foreach (var path in paths.Take(40))
-        {
-            var version = await _javaRuntimeManager.ProbeJavaMajorVersionForPathAsync(path);
-            if (version <= 0)
-            {
-                continue;
-            }
-
-            var isCompatible = version >= requiredVersion;
-            options.Add(new JavaRuntimeOption
-            {
-                DisplayName = $"{GetJavaDisplayName(path, version)} | x64 | {path}{FormatCompatibilitySuffix(isCompatible, requiredVersion)}",
-                JavaPath = path,
-                MajorVersion = version,
-                IsCompatible = isCompatible
-            });
-        }
-
-        return options
-            .OrderByDescending(option => option.IsCompatible)
-            .ThenByDescending(option => option.MajorVersion)
-            .ThenBy(option => option.JavaPath, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        return paths.ToArray();
     }
 
     private static void AddJavaCandidate(ISet<string> paths, string? value)
@@ -577,7 +636,7 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            foreach (var vendorDirectory in new[] { "Zulu", "Java", "Eclipse Adoptium", "Microsoft" })
+            foreach (var vendorDirectory in new[] { "Zulu", "Java", "Eclipse Adoptium", "Microsoft", "BellSoft", "Amazon Corretto" })
             {
                 var directory = Path.Combine(programFiles, vendorDirectory);
                 if (!Directory.Exists(directory))
@@ -585,11 +644,24 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                foreach (var javaPath in Directory.EnumerateFiles(directory, "java.exe", SearchOption.AllDirectories).Take(20))
+                AddJavaCandidate(paths, directory);
+                foreach (var javaHome in SafeEnumerateDirectories(directory).Take(80))
                 {
-                    AddJavaCandidate(paths, javaPath);
+                    AddJavaCandidate(paths, javaHome);
                 }
             }
+        }
+    }
+
+    private static IEnumerable<string> SafeEnumerateDirectories(string directory)
+    {
+        try
+        {
+            return Directory.EnumerateDirectories(directory).ToArray();
+        }
+        catch
+        {
+            return [];
         }
     }
 
@@ -688,6 +760,14 @@ public partial class MainWindow : Window
         }
 
         DragMove();
+    }
+
+    private void ShellContent_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ShellContent.Clip = new RectangleGeometry(
+            new Rect(0, 0, ShellContent.ActualWidth, ShellContent.ActualHeight),
+            ShellBorder.CornerRadius.TopLeft,
+            ShellBorder.CornerRadius.TopLeft);
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)

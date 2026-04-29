@@ -1,10 +1,13 @@
 using System.IO.Compression;
+using System.Text;
 using DreamLauncher.Models.Operations;
 
 namespace DreamLauncher.Core.Archives;
 
 public sealed class SafeZipExtractor
 {
+    private static readonly Lazy<Encoding> ChineseZipEncoding = new(CreateChineseZipEncoding);
+
     public async Task ExtractAsync(
         string archivePath,
         string destinationDirectory,
@@ -18,7 +21,7 @@ public sealed class SafeZipExtractor
 
         Directory.CreateDirectory(destinationDirectory);
         var destinationRoot = Path.GetFullPath(destinationDirectory);
-        using var archive = ZipFile.OpenRead(archivePath);
+        using var archive = OpenReadArchive(archivePath);
 
         var entries = archive.Entries.Where(entry => !IsDirectoryEntry(entry)).ToArray();
         var totalBytes = entries.Sum(entry => Math.Max(0L, entry.Length));
@@ -90,7 +93,7 @@ public sealed class SafeZipExtractor
 
         Directory.CreateDirectory(destinationDirectory);
         var destinationRoot = Path.GetFullPath(destinationDirectory);
-        using var archive = ZipFile.OpenRead(archivePath);
+        using var archive = OpenReadArchive(archivePath);
 
         var entries = archive.Entries
             .Where(entry => !IsDirectoryEntry(entry))
@@ -221,5 +224,42 @@ public sealed class SafeZipExtractor
         {
             throw new IOException("磁盘空间不足，无法解压客户端。");
         }
+    }
+
+    private static ZipArchive OpenReadArchive(string archivePath)
+    {
+        var archive = ZipFile.OpenRead(archivePath);
+        if (!ArchiveLooksMojibake(archive))
+        {
+            return archive;
+        }
+
+        archive.Dispose();
+        return ZipFile.Open(archivePath, ZipArchiveMode.Read, ChineseZipEncoding.Value);
+    }
+
+    private static bool ArchiveLooksMojibake(ZipArchive archive)
+    {
+        foreach (var entryName in archive.Entries.Take(128).Select(entry => entry.FullName))
+        {
+            if (entryName.Contains('\uFFFD', StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var boxDrawingCount = entryName.Count(ch => ch is >= '\u2500' and <= '\u257F');
+            if (boxDrawingCount >= 2)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Encoding CreateChineseZipEncoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding("GB18030");
     }
 }

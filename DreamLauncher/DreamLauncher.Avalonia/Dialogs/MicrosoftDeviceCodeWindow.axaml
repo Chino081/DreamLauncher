@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DreamLauncher.Avalonia.Dialogs.MicrosoftDeviceCodeWindow"
+        Width="470"
+        Height="330"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="None"
+        Background="Transparent">
+  <Border Margin="10" Padding="22" CornerRadius="20" Background="#20243D" BorderBrush="#5C6683" BorderThickness="1">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+      <TextBlock Text="Microsoft 登录" FontSize="22" FontWeight="Bold" Foreground="White" />
+      <TextBlock Grid.Row="1"
+                 Text="浏览器已打开，请输入下面的代码。代码会自动复制。"
+                 Foreground="#C7CBE0"
+                 TextWrapping="Wrap"
+                 Margin="0,8,0,18" />
+      <Border Grid.Row="2" Background="#343A52" BorderBrush="#59647C" BorderThickness="1" CornerRadius="16" Padding="18">
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="登录代码" Foreground="#C7CBE0" />
+          <TextBlock x:Name="CodeTextBlock" Text="--------" FontSize="34" FontWeight="Bold" Foreground="White" Margin="0,8,0,0" />
+          <TextBlock Text="完成网页登录后，此窗口会自动关闭。" Foreground="#C7CBE0" FontSize="12" Margin="0,12,0,0" />
+        </StackPanel>
+      </Border>
+      <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,18,0,0">
+        <Button Content="重新打开网页" Click="OpenBrowser_Click" />
+        <Button Content="复制代码" Click="CopyCode_Click" />
+        <Button Content="取消" Background="#C2185B" Foreground="White" Click="Cancel_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

@@ -52,15 +52,16 @@ public sealed class MinecraftLaunchService
 
         Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
 
+        var launchJavaPath = GetJavaLauncherPath(java.JavaPath);
         var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = java.JavaPath,
+            FileName = launchJavaPath,
             WorkingDirectory = plan.WorkingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            CreateNoWindow = false
+            CreateNoWindow = true
         };
 
         foreach (var argument in plan.Arguments)
@@ -84,6 +85,39 @@ public sealed class MinecraftLaunchService
             ProcessId = process.Id,
             LogPath = logPath
         };
+    }
+
+    private static string GetJavaLauncherPath(string javaPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return javaPath;
+        }
+
+        if (string.Equals(javaPath, "java", StringComparison.OrdinalIgnoreCase))
+        {
+            return "javaw";
+        }
+
+        var fileName = Path.GetFileName(javaPath);
+        if (string.Equals(fileName, "javaw.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return javaPath;
+        }
+
+        if (!string.Equals(fileName, "java.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return javaPath;
+        }
+
+        var directory = Path.GetDirectoryName(javaPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return javaPath;
+        }
+
+        var javawPath = Path.Combine(directory, "javaw.exe");
+        return File.Exists(javawPath) ? javawPath : javaPath;
     }
 
     private static void AppendLogLine(string logPath, string? line)

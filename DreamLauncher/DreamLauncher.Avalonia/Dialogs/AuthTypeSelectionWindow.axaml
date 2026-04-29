@@ -1,0 +1,91 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DreamLauncher.Avalonia.Dialogs.AuthTypeSelectionWindow"
+        Width="470"
+        Height="390"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent">
+  <Border Margin="10"
+          Padding="24"
+          CornerRadius="22"
+          Background="#20243D"
+          BorderBrush="#5C6683"
+          BorderThickness="1"
+          ClipToBounds="True"
+          PointerPressed="Dialog_PointerPressed">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <StackPanel>
+        <TextBlock Text="新建档案" FontSize="26" FontWeight="Bold" Foreground="White" />
+        <TextBlock Text="选择一个账号验证类型继续登录" Foreground="#C7CBE0" Margin="0,8,0,0" />
+      </StackPanel>
+
+      <StackPanel Grid.Row="1" Margin="0,22,0,18" Spacing="10">
+        <Button x:Name="MicrosoftButton"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Background="#3E465F"
+                BorderBrush="#7D46EF"
+                BorderThickness="1"
+                Padding="14"
+                Click="Microsoft_Click">
+          <Grid ColumnDefinitions="48,*,Auto">
+            <Border Width="34" Height="34" CornerRadius="12" Background="#44506A" BorderBrush="#A7B0D8" BorderThickness="1">
+              <TextBlock Text="✓" FontSize="18" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="正版验证" Foreground="White" FontSize="16" FontWeight="Bold" />
+              <TextBlock Text="Microsoft 正版账号登录" Foreground="#C7CBE0" FontSize="12" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="已选择" Foreground="#FF5BAB" VerticalAlignment="Center" />
+          </Grid>
+        </Button>
+
+        <Button HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Background="#30364B"
+                BorderBrush="#474E63"
+                BorderThickness="1"
+                Padding="14"
+                IsEnabled="False">
+          <Grid ColumnDefinitions="48,*,Auto" Opacity="0.62">
+            <Border Width="34" Height="34" CornerRadius="12" Background="#343A4F" BorderBrush="#555C70" BorderThickness="1">
+              <TextBlock Text="3" FontSize="16" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="第三方验证" Foreground="White" FontSize="16" FontWeight="Bold" />
+              <TextBlock Text="皮肤站登录暂未在跨平台界面开放" Foreground="#C7CBE0" FontSize="12" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="暂不可用" Foreground="#C7CBE0" VerticalAlignment="Center" />
+          </Grid>
+        </Button>
+
+        <Button HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Background="#30364B"
+                BorderBrush="#474E63"
+                BorderThickness="1"
+                Padding="14"
+                IsEnabled="False">
+          <Grid ColumnDefinitions="48,*,Auto" Opacity="0.62">
+            <Border Width="34" Height="34" CornerRadius="12" Background="#343A4F" BorderBrush="#555C70" BorderThickness="1">
+              <TextBlock Text="∞" FontSize="16" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="离线验证" Foreground="White" FontSize="16" FontWeight="Bold" />
+              <TextBlock Text="离线账号暂未在跨平台界面开放" Foreground="#C7CBE0" FontSize="12" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="暂不可用" Foreground="#C7CBE0" VerticalAlignment="Center" />
+          </Grid>
+        </Button>
+      </StackPanel>
+
+      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+        <Button Content="继续" MinWidth="92" Background="#FF5BAB" Foreground="White" Click="Continue_Click" />
+        <Button Content="取消" MinWidth="92" Click="Cancel_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

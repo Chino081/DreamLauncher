@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DreamLauncher.Avalonia.Dialogs.MessageDialog"
+        Width="420"
+        Height="220"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="None"
+        Background="Transparent">
+  <Border Margin="10" Padding="24" CornerRadius="20" Background="#20243D" BorderBrush="#5C6683" BorderThickness="1">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <TextBlock x:Name="TitleTextBlock" Text="DreamLauncher" FontSize="22" FontWeight="Bold" Foreground="White" />
+      <TextBlock x:Name="MessageTextBlock" Grid.Row="1" Margin="0,16,0,0" TextWrapping="Wrap" Foreground="#D6D9EA" />
+      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+        <Button x:Name="CancelButton" Content="取消" MinWidth="82" Click="Cancel_Click" />
+        <Button Content="确定" MinWidth="82" Background="#FF5BAB" Foreground="White" Click="Ok_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

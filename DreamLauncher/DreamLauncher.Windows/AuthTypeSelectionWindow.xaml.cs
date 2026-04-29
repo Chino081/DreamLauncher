@@ -25,8 +25,8 @@ public partial class AuthTypeSelectionWindow : Window
         SelectedAuthType = sender switch
         {
             RadioButton radio when radio == MicrosoftRadio => AuthTypeChoice.Microsoft,
-            RadioButton radio when radio == ThirdPartyRadio => AuthTypeChoice.ThirdParty,
-            RadioButton radio when radio == OfflineRadio => AuthTypeChoice.Offline,
+            RadioButton radio when radio == ThirdPartyRadio && radio.IsEnabled => AuthTypeChoice.ThirdParty,
+            RadioButton radio when radio == OfflineRadio && radio.IsEnabled => AuthTypeChoice.Offline,
             _ => null
         };
 

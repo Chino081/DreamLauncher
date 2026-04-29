@@ -45,11 +45,12 @@ public partial class MainWindow : Window
         var extractor = new SafeZipExtractor();
         var remoteConfigClient = new RemoteConfigClient();
         var tokenStore = new WindowsCredentialTokenStore();
+        var accountProfileStore = new AccountProfileStore(_paths);
         var browserLauncher = new WindowsBrowserLauncher();
         var deviceCodePresenter = new WindowsMicrosoftDeviceCodePresenter();
         var authService = new MicrosoftAuthService(browserLauncher, deviceCodePresenter);
         var thirdPartyAuthService = new ThirdPartyAuthService();
-        _accountManager = new AccountManager(_configStore, tokenStore, authService, thirdPartyAuthService);
+        _accountManager = new AccountManager(_configStore, accountProfileStore, tokenStore, authService, thirdPartyAuthService);
         var clientManager = new ClientManager(_paths, downloadService, extractor);
         _javaRuntimeManager = new JavaRuntimeManager(_paths, downloadService, extractor);
         var minecraftLaunchService = new MinecraftLaunchService(_paths);
@@ -182,6 +183,20 @@ public partial class MainWindow : Window
             case AuthTypeChoice.Offline:
                 await ShowOfflineAccountAsync();
                 break;
+        }
+    }
+
+    private async void SwitchAccountButton_Click(object sender, RoutedEventArgs e)
+    {
+        var switchWindow = new AccountSwitchWindow(_accountManager)
+        {
+            Owner = this
+        };
+
+        if (switchWindow.ShowDialog() == true || switchWindow.AccountChanged)
+        {
+            await _viewModel.InitializeAsync();
+            await LoadInlineSettingsAsync();
         }
     }
 

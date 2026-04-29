@@ -14,8 +14,13 @@ public sealed class LauncherPaths
             ? Path.Combine(ProgramDirectory, "DreamLauncher")
             : Path.GetFullPath(rootPath);
 
+        AccountDataRootPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            ".DreamtcLauncher");
+
         MinecraftDirectory = Path.Combine(ProgramDirectory, ".minecraft");
         ConfigPath = Path.Combine(RootPath, "config.json");
+        AccountDataPath = Path.Combine(AccountDataRootPath, "accounts.json");
         ClientsPath = Path.Combine(RootPath, "clients");
         RuntimePath = Path.Combine(RootPath, "runtime");
         JavaRuntimePath = Path.Combine(RuntimePath, "java");
@@ -31,9 +36,13 @@ public sealed class LauncherPaths
 
     public string RootPath { get; }
 
+    public string AccountDataRootPath { get; }
+
     public string MinecraftDirectory { get; }
 
     public string ConfigPath { get; }
+
+    public string AccountDataPath { get; }
 
     public string ClientsPath { get; }
 

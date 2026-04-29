@@ -10,17 +10,20 @@ public sealed class AccountManager
 {
     private const string DefaultMicrosoftClientId = "00000000402b5328";
     private readonly LauncherConfigStore _configStore;
+    private readonly AccountProfileStore _accountProfileStore;
     private readonly ISecureTokenStore _tokenStore;
     private readonly IMicrosoftAuthService _authService;
     private readonly IThirdPartyAuthService _thirdPartyAuthService;
 
     public AccountManager(
         LauncherConfigStore configStore,
+        AccountProfileStore accountProfileStore,
         ISecureTokenStore tokenStore,
         IMicrosoftAuthService authService,
         IThirdPartyAuthService thirdPartyAuthService)
     {
         _configStore = configStore;
+        _accountProfileStore = accountProfileStore;
         _tokenStore = tokenStore;
         _authService = authService;
         _thirdPartyAuthService = thirdPartyAuthService;
@@ -28,28 +31,27 @@ public sealed class AccountManager
 
     public async Task<IReadOnlyList<AccountMetadata>> GetAccountsAsync(CancellationToken cancellationToken = default)
     {
-        var config = await _configStore.LoadAsync(cancellationToken);
-        return config.Accounts;
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
+        return document.Accounts.ToArray();
     }
 
     public async Task<AccountMetadata?> GetDefaultAccountAsync(CancellationToken cancellationToken = default)
     {
-        var config = await _configStore.LoadAsync(cancellationToken);
-        return string.IsNullOrWhiteSpace(config.DefaultAccountId)
-            ? config.Accounts.FirstOrDefault()
-            : config.Accounts.FirstOrDefault(account => account.Id == config.DefaultAccountId);
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(document.DefaultAccountId)
+            ? document.Accounts.FirstOrDefault()
+            : document.Accounts.FirstOrDefault(account => account.Id == document.DefaultAccountId);
     }
 
     public async Task<AccountMetadata> AddMicrosoftAccountAsync(CancellationToken cancellationToken = default)
     {
-        var config = await _configStore.LoadAsync(cancellationToken);
-        var clientId = RequireMicrosoftClientId(config);
-        var result = await _authService.SignInAsync(clientId, cancellationToken);
+        var result = await _authService.SignInAsync(DefaultMicrosoftClientId, cancellationToken);
 
         await _tokenStore.SaveAsync(result.Account.Id, result.Tokens, cancellationToken);
-        UpsertAccount(config, result.Account);
-        config.DefaultAccountId = result.Account.Id;
-        await _configStore.SaveAsync(config, cancellationToken);
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
+        UpsertAccount(document, result.Account);
+        document.DefaultAccountId = result.Account.Id;
+        await _accountProfileStore.SaveAsync(document, cancellationToken);
 
         return result.Account;
     }
@@ -60,11 +62,11 @@ public sealed class AccountManager
     {
         var normalizedName = NormalizeOfflinePlayerName(playerName);
         var account = CreateOfflineAccount(normalizedName);
-        var config = await _configStore.LoadAsync(cancellationToken);
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
 
-        UpsertAccount(config, account);
-        config.DefaultAccountId = account.Id;
-        await _configStore.SaveAsync(config, cancellationToken);
+        UpsertAccount(document, account);
+        document.DefaultAccountId = account.Id;
+        await _accountProfileStore.SaveAsync(document, cancellationToken);
         return account;
     }
 
@@ -73,12 +75,12 @@ public sealed class AccountManager
         CancellationToken cancellationToken = default)
     {
         var result = await _thirdPartyAuthService.SignInAsync(input, cancellationToken);
-        var config = await _configStore.LoadAsync(cancellationToken);
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
 
         await _tokenStore.SaveAsync(result.Account.Id, result.Tokens, cancellationToken);
-        UpsertAccount(config, result.Account);
-        config.DefaultAccountId = result.Account.Id;
-        await _configStore.SaveAsync(config, cancellationToken);
+        UpsertAccount(document, result.Account);
+        document.DefaultAccountId = result.Account.Id;
+        await _accountProfileStore.SaveAsync(document, cancellationToken);
 
         return result.Account;
     }
@@ -87,15 +89,15 @@ public sealed class AccountManager
         string accountId,
         CancellationToken cancellationToken = default)
     {
-        var config = await _configStore.LoadAsync(cancellationToken);
-        var account = config.Accounts.FirstOrDefault(item => item.Id == accountId)
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
+        var account = document.Accounts.FirstOrDefault(item => item.Id == accountId)
             ?? throw new InvalidOperationException("账号不存在。");
 
         if (IsOfflineAccount(account))
         {
             account.Status = AccountLoginStatus.Available;
             account.ExpiresAtUtc = DateTimeOffset.UtcNow.AddYears(10);
-            await _configStore.SaveAsync(config, cancellationToken);
+            await _accountProfileStore.SaveAsync(document, cancellationToken);
             return account;
         }
 
@@ -113,59 +115,58 @@ public sealed class AccountManager
                 cancellationToken);
 
             await _tokenStore.SaveAsync(result.Account.Id, result.Tokens, cancellationToken);
-            UpsertAccount(config, result.Account);
-            await _configStore.SaveAsync(config, cancellationToken);
+            UpsertAccount(document, result.Account);
+            await _accountProfileStore.SaveAsync(document, cancellationToken);
             return result.Account;
         }
 
         if (tokens.ExpiresAtUtc > DateTimeOffset.UtcNow.AddMinutes(5))
         {
             account.Status = AccountLoginStatus.Available;
-            await _configStore.SaveAsync(config, cancellationToken);
+            await _accountProfileStore.SaveAsync(document, cancellationToken);
             return account;
         }
 
-        var clientId = RequireMicrosoftClientId(config);
         var refreshed = await _authService.RefreshAsync(
-            clientId,
+            DefaultMicrosoftClientId,
             new MicrosoftRefreshInput { RefreshToken = tokens.MicrosoftRefreshToken },
             cancellationToken);
         await _tokenStore.SaveAsync(refreshed.Account.Id, refreshed.Tokens, cancellationToken);
 
-        UpsertAccount(config, refreshed.Account);
-        if (config.DefaultAccountId == accountId)
+        UpsertAccount(document, refreshed.Account);
+        if (document.DefaultAccountId == accountId)
         {
-            config.DefaultAccountId = refreshed.Account.Id;
+            document.DefaultAccountId = refreshed.Account.Id;
         }
 
-        await _configStore.SaveAsync(config, cancellationToken);
+        await _accountProfileStore.SaveAsync(document, cancellationToken);
         return refreshed.Account;
     }
 
     public async Task SetDefaultAccountAsync(string accountId, CancellationToken cancellationToken = default)
     {
-        var config = await _configStore.LoadAsync(cancellationToken);
-        if (config.Accounts.All(account => account.Id != accountId))
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
+        if (document.Accounts.All(account => account.Id != accountId))
         {
             throw new InvalidOperationException("账号不存在。");
         }
 
-        config.DefaultAccountId = accountId;
-        await _configStore.SaveAsync(config, cancellationToken);
+        document.DefaultAccountId = accountId;
+        await _accountProfileStore.SaveAsync(document, cancellationToken);
     }
 
     public async Task RemoveAccountAsync(string accountId, CancellationToken cancellationToken = default)
     {
-        var config = await _configStore.LoadAsync(cancellationToken);
-        config.Accounts.RemoveAll(account => account.Id == accountId);
+        var document = await LoadProfilesWithMigrationAsync(cancellationToken);
+        document.Accounts.RemoveAll(account => account.Id == accountId);
 
-        if (config.DefaultAccountId == accountId)
+        if (document.DefaultAccountId == accountId)
         {
-            config.DefaultAccountId = config.Accounts.FirstOrDefault()?.Id;
+            document.DefaultAccountId = document.Accounts.FirstOrDefault()?.Id;
         }
 
         await _tokenStore.DeleteAsync(accountId, cancellationToken);
-        await _configStore.SaveAsync(config, cancellationToken);
+        await _accountProfileStore.SaveAsync(document, cancellationToken);
     }
 
     public static bool IsOfflineAccount(AccountMetadata account)
@@ -190,20 +191,33 @@ public sealed class AccountManager
         };
     }
 
-    private static string RequireMicrosoftClientId(LauncherConfig config)
+    private async Task<AccountProfileDocument> LoadProfilesWithMigrationAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(config.MicrosoftClientId))
+        var document = await _accountProfileStore.LoadAsync(cancellationToken);
+        var config = await _configStore.LoadAsync(cancellationToken);
+        if (config.Accounts.Count == 0 && string.IsNullOrWhiteSpace(config.DefaultAccountId))
         {
-            return DefaultMicrosoftClientId;
+            return document;
         }
 
-        return config.MicrosoftClientId;
+        if (document.Accounts.Count == 0)
+        {
+            document.Accounts.AddRange(config.Accounts);
+            document.DefaultAccountId = config.DefaultAccountId;
+            await _accountProfileStore.SaveAsync(document, cancellationToken);
+        }
+
+        config.Accounts.Clear();
+        config.DefaultAccountId = null;
+        await _configStore.SaveAsync(config, cancellationToken);
+
+        return document;
     }
 
-    private static void UpsertAccount(LauncherConfig config, AccountMetadata account)
+    private static void UpsertAccount(AccountProfileDocument document, AccountMetadata account)
     {
-        config.Accounts.RemoveAll(existing => existing.Id == account.Id);
-        config.Accounts.Add(account);
+        document.Accounts.RemoveAll(existing => existing.Id == account.Id);
+        document.Accounts.Add(account);
     }
 
     private static AccountMetadata CreateOfflineAccount(string playerName)

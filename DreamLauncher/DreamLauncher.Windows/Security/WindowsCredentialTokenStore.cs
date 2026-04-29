@@ -1,5 +1,6 @@
-using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DreamLauncher.Core.Accounts;
@@ -14,6 +15,21 @@ public sealed class WindowsCredentialTokenStore : ISecureTokenStore
     private const int CredentialPersistLocalMachine = 2;
     private const int ErrorNotFound = 1168;
     private const string TargetPrefix = "DreamLauncher:Microsoft:";
+    private static readonly byte[] FileEntropy = Encoding.UTF8.GetBytes("DreamLauncher.AccountTokens.v1");
+    private readonly string _fallbackDirectory;
+
+    public WindowsCredentialTokenStore()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            ".DreamtcLauncher",
+            "tokens"))
+    {
+    }
+
+    public WindowsCredentialTokenStore(string fallbackDirectory)
+    {
+        _fallbackDirectory = fallbackDirectory;
+    }
 
     public Task SaveAsync(
         string accountId,
@@ -22,6 +38,42 @@ public sealed class WindowsCredentialTokenStore : ISecureTokenStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (TrySaveToCredentialManager(accountId, tokens))
+        {
+            DeleteFallbackFile(accountId);
+            return Task.CompletedTask;
+        }
+
+        SaveFallbackFile(accountId, tokens);
+        return Task.CompletedTask;
+    }
+
+    public Task<SecureAccountTokens?> ReadAsync(
+        string accountId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var credentialTokens = ReadFromCredentialManager(accountId);
+        if (credentialTokens is not null)
+        {
+            return Task.FromResult<SecureAccountTokens?>(credentialTokens);
+        }
+
+        return Task.FromResult(ReadFallbackFile(accountId));
+    }
+
+    public Task DeleteAsync(string accountId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _ = CredDelete(GetTargetName(accountId), CredentialTypeGeneric, 0);
+        DeleteFallbackFile(accountId);
+        return Task.CompletedTask;
+    }
+
+    private static bool TrySaveToCredentialManager(string accountId, SecureAccountTokens tokens)
+    {
         var json = JsonSerializer.Serialize(tokens, LauncherJson.Options);
         var bytes = Encoding.Unicode.GetBytes(json);
         var blob = Marshal.AllocCoTaskMem(bytes.Length);
@@ -41,32 +93,28 @@ public sealed class WindowsCredentialTokenStore : ISecureTokenStore
 
             if (!CredWrite(ref credential, 0))
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "无法写入 Windows Credential Manager。");
+                return false;
             }
+
+            return true;
         }
         finally
         {
             Marshal.FreeCoTaskMem(blob);
         }
-
-        return Task.CompletedTask;
     }
 
-    public Task<SecureAccountTokens?> ReadAsync(
-        string accountId,
-        CancellationToken cancellationToken = default)
+    private static SecureAccountTokens? ReadFromCredentialManager(string accountId)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
         if (!CredRead(GetTargetName(accountId), CredentialTypeGeneric, 0, out var credentialPointer))
         {
             var error = Marshal.GetLastWin32Error();
             if (error == ErrorNotFound)
             {
-                return Task.FromResult<SecureAccountTokens?>(null);
+                return null;
             }
 
-            throw new Win32Exception(error, "无法读取 Windows Credential Manager。");
+            return null;
         }
 
         try
@@ -74,14 +122,13 @@ public sealed class WindowsCredentialTokenStore : ISecureTokenStore
             var credential = Marshal.PtrToStructure<NativeCredential>(credentialPointer);
             if (credential.CredentialBlobSize == 0 || credential.CredentialBlob == IntPtr.Zero)
             {
-                return Task.FromResult<SecureAccountTokens?>(null);
+                return null;
             }
 
             var bytes = new byte[credential.CredentialBlobSize];
             Marshal.Copy(credential.CredentialBlob, bytes, 0, bytes.Length);
             var json = Encoding.Unicode.GetString(bytes);
-            var tokens = JsonSerializer.Deserialize<SecureAccountTokens>(json, LauncherJson.Options);
-            return Task.FromResult(tokens);
+            return JsonSerializer.Deserialize<SecureAccountTokens>(json, LauncherJson.Options);
         }
         finally
         {
@@ -89,20 +136,42 @@ public sealed class WindowsCredentialTokenStore : ISecureTokenStore
         }
     }
 
-    public Task DeleteAsync(string accountId, CancellationToken cancellationToken = default)
+    private void SaveFallbackFile(string accountId, SecureAccountTokens tokens)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        Directory.CreateDirectory(_fallbackDirectory);
 
-        if (!CredDelete(GetTargetName(accountId), CredentialTypeGeneric, 0))
+        var json = JsonSerializer.Serialize(tokens, LauncherJson.Options);
+        var plainBytes = Encoding.UTF8.GetBytes(json);
+        var encryptedBytes = ProtectedData.Protect(plainBytes, FileEntropy, DataProtectionScope.CurrentUser);
+        File.WriteAllBytes(GetFallbackPath(accountId), encryptedBytes);
+    }
+
+    private SecureAccountTokens? ReadFallbackFile(string accountId)
+    {
+        var path = GetFallbackPath(accountId);
+        if (!File.Exists(path))
         {
-            var error = Marshal.GetLastWin32Error();
-            if (error != ErrorNotFound)
-            {
-                throw new Win32Exception(error, "无法删除 Windows Credential Manager 凭据。");
-            }
+            return null;
         }
 
-        return Task.CompletedTask;
+        var encryptedBytes = File.ReadAllBytes(path);
+        var plainBytes = ProtectedData.Unprotect(encryptedBytes, FileEntropy, DataProtectionScope.CurrentUser);
+        var json = Encoding.UTF8.GetString(plainBytes);
+        return JsonSerializer.Deserialize<SecureAccountTokens>(json, LauncherJson.Options);
+    }
+
+    private void DeleteFallbackFile(string accountId)
+    {
+        var path = GetFallbackPath(accountId);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+
+    private string GetFallbackPath(string accountId)
+    {
+        return Path.Combine(_fallbackDirectory, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(accountId))) + ".bin");
     }
 
     private static string GetTargetName(string accountId)

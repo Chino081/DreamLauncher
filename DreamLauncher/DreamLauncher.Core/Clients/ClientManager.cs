@@ -148,6 +148,15 @@ public sealed class ClientManager
             SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, finalDirectory);
             Directory.Move(stagingDirectory, finalDirectory);
             await WriteLocalConfigAsync(metadataDirectory, client, cancellationToken);
+
+            progress?.Report(new LauncherOperationProgress
+            {
+                Stage = "cleanup",
+                Message = "正在清理下载缓存",
+                Progress = null
+            });
+
+            DeleteFileIfExists(packPath);
         }
         catch
         {
@@ -327,5 +336,13 @@ public sealed class ClientManager
         var invalid = Path.GetInvalidFileNameChars();
         var clean = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
         return string.IsNullOrWhiteSpace(clean) ? "client" : clean;
+    }
+
+    private static void DeleteFileIfExists(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
     }
 }

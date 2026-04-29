@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using DreamLauncher.Core.Security;
 using DreamLauncher.Models.Accounts;
 
 namespace DreamLauncher.Core.Accounts;
@@ -13,10 +14,10 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
 {
     private const string DeviceCodeUrl = "https://login.live.com/oauth20_connect.srf";
     private const string TokenUrl = "https://login.live.com/oauth20_token.srf";
+    private const string OAuthScope = "XboxLive.signin offline_access";
     private const string DeviceCodeScope = "service::user.auth.xboxlive.com::MBI_SSL offline_access";
     private const string DesktopRedirectUrl = "https://login.live.com/oauth20_desktop.srf";
     private const string RemoteConnectUrl = "https://login.live.com/oauth20_remoteconnect.srf";
-    private const string OAuthScope = "XboxLive.signin offline_access";
     private readonly HttpClient _httpClient;
     private readonly IBrowserLauncher _browserLauncher;
     private readonly IMicrosoftDeviceCodePresenter? _deviceCodePresenter;
@@ -199,19 +200,26 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
                     TokenType = "JWT"
                 };
 
-                using var response = await _httpClient.PostAsJsonAsync(
+                using var response = await PostXboxJsonAsync(
                     "https://user.auth.xboxlive.com/user/authenticate",
                     payload,
                     cancellationToken);
-                response.EnsureSuccessStatusCode();
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw CreateServiceException("Xbox Live 授权失败", response, body);
+                }
 
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                using var document = JsonDocument.Parse(body);
                 var root = document.RootElement;
 
                 return new XboxTokenResult(
                     ReadRequiredString(root, "Token"),
                     ReadUserHash(root));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -219,7 +227,12 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
             }
         }
 
-        throw new InvalidOperationException("Xbox Live 授权失败。", lastException);
+        var detail = lastException?.Message;
+        throw new InvalidOperationException(
+            string.IsNullOrWhiteSpace(detail)
+                ? "Xbox Live 授权失败，请检查账号是否可用、系统时间是否正确，或稍后重试。"
+                : "Xbox Live 授权失败，请检查账号是否可用、系统时间是否正确，或稍后重试。" + Environment.NewLine + detail,
+            lastException);
     }
 
     private async Task<MicrosoftDeviceCodeInfo> RequestDeviceCodeAsync(
@@ -318,19 +331,23 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
             TokenType = "JWT"
         };
 
-        using var response = await _httpClient.PostAsJsonAsync(
+        using var response = await PostXboxJsonAsync(
             "https://xsts.auth.xboxlive.com/xsts/authorize",
             payload,
             cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            throw new InvalidOperationException("Xbox/XSTS 授权失败，请确认该 Microsoft 账号可登录 Minecraft。");
+            throw CreateServiceException("Xbox/XSTS 授权失败，请确认该 Microsoft 账号可登录 Minecraft", response, body);
         }
 
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw CreateServiceException("Xbox/XSTS 授权失败", response, body);
+        }
+
+        using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
 
         return new XboxTokenResult(
@@ -352,10 +369,13 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
             "https://api.minecraftservices.com/authentication/login_with_xbox",
             payload,
             cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw CreateServiceException("Minecraft 服务登录失败", response, body);
+        }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
 
         return new MinecraftTokenResult(
@@ -380,6 +400,82 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         return new MinecraftProfileResult(
             ReadRequiredString(root, "id"),
             ReadRequiredString(root, "name"));
+    }
+
+    private async Task<HttpResponseMessage> PostXboxJsonAsync(
+        string url,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+
+        return await _httpClient.SendAsync(request, cancellationToken);
+    }
+
+    private static InvalidOperationException CreateServiceException(
+        string message,
+        HttpResponseMessage response,
+        string responseBody)
+    {
+        var status = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}".Trim();
+        var detail = FormatServiceErrorDetail(responseBody);
+        return new InvalidOperationException(string.IsNullOrWhiteSpace(detail)
+            ? $"{message}（{status}）。"
+            : $"{message}（{status}）。{detail}");
+    }
+
+    private static string FormatServiceErrorDetail(string responseBody)
+    {
+        var body = SensitiveDataRedactor.Redact(responseBody);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return "";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            var parts = new List<string>();
+
+            AddJsonText(parts, root, "error");
+            AddJsonText(parts, root, "error_description");
+            AddJsonText(parts, root, "message");
+            AddJsonText(parts, root, "Message");
+
+            if (root.TryGetProperty("XErr", out var xerr))
+            {
+                parts.Add($"XErr={xerr}");
+            }
+
+            return parts.Count > 0
+                ? string.Join("；", parts)
+                : Truncate(body, 420);
+        }
+        catch (JsonException)
+        {
+            return Truncate(body, 420);
+        }
+    }
+
+    private static void AddJsonText(ICollection<string> parts, JsonElement root, string propertyName)
+    {
+        if (root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String)
+        {
+            var text = value.GetString();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                parts.Add(text);
+            }
+        }
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        return value.Length <= maxLength ? value : value[..maxLength] + "...";
     }
 
     private static MicrosoftTokens ReadMicrosoftTokens(JsonElement root)

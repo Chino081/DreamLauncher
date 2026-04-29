@@ -259,7 +259,7 @@
                                                 </Border>
                                                 <WrapPanel Grid.Row="2" VerticalAlignment="Bottom">
                                                     <Button Content="登录账号" Style="{StaticResource PrimaryButton}" Click="LoginAccountButton_Click" Margin="0,0,10,0" />
-                                                    <Button Content="退出当前" Style="{StaticResource SecondaryButton}" IsEnabled="False" Margin="0" />
+                                                    <Button Content="切换账号" Style="{StaticResource SecondaryButton}" Click="SwitchAccountButton_Click" Margin="0" />
                                                 </WrapPanel>
                                             </Grid>
                                         </Border>

@@ -1,0 +1,195 @@
+<Window x:Class="DreamLauncher.Windows.AccountSwitchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="切换账号"
+        Width="620"
+        Height="500"
+        MinWidth="560"
+        MinHeight="440"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ResizeMode="NoResize"
+        Background="Transparent"
+        Foreground="{StaticResource TextPrimary}">
+    <Window.Resources>
+        <LinearGradientBrush x:Key="DialogShellBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#1B2638" Offset="0" />
+            <GradientStop Color="#282845" Offset="0.58" />
+            <GradientStop Color="#321F4B" Offset="1" />
+        </LinearGradientBrush>
+
+        <Style x:Key="AccountSwitchItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="ItemRoot"
+                                Background="#3A4059"
+                                BorderBrush="#515970"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="14">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemRoot" Property="BorderBrush" Value="#FF65AE" />
+                                <Setter TargetName="ItemRoot" Property="Background" Value="#424962" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemRoot" Property="BorderBrush" Value="#8A45FF" />
+                                <Setter TargetName="ItemRoot" Property="Background" Value="#3E2558" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="10"
+            Background="{StaticResource DialogShellBrush}"
+            BorderBrush="#48516B"
+            BorderThickness="1"
+            CornerRadius="22"
+            ClipToBounds="True"
+            MouseLeftButtonDown="Dialog_MouseLeftButtonDown">
+        <Grid>
+            <Ellipse Width="240" Height="240" Fill="#7D46EF" Opacity="0.16"
+                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-110,-92,0" />
+            <Ellipse Width="190" Height="190" Fill="#FF5BA7" Opacity="0.13"
+                     HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="-80,0,0,-92" />
+
+            <Grid Margin="24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Background="Transparent" MouseLeftButtonDown="Dialog_MouseLeftButtonDown">
+                    <StackPanel>
+                        <TextBlock Text="切换账号" FontSize="24" FontWeight="Bold" />
+                        <TextBlock Text="选择一个已登录账号作为当前启动账号。"
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontSize="12"
+                                   LineHeight="18"
+                                   Margin="0,6,0,0" />
+                    </StackPanel>
+                </Grid>
+
+                <Border Grid.Row="1"
+                        Background="#2F354D"
+                        BorderBrush="#4B5269"
+                        BorderThickness="1"
+                        CornerRadius="18"
+                        Padding="12"
+                        Margin="0,18,0,18">
+                    <Grid>
+                        <ListBox x:Name="AccountsListBox"
+                                 ItemsSource="{Binding Accounts}"
+                                 SelectedItem="{Binding SelectedAccount, Mode=TwoWay}"
+                                 ItemContainerStyle="{StaticResource AccountSwitchItemStyle}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Foreground="{StaticResource TextPrimary}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="58" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Width="48"
+                                                Height="48"
+                                                Background="{StaticResource Accent}"
+                                                CornerRadius="16"
+                                                VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding AvatarText}"
+                                                       FontSize="20"
+                                                       FontWeight="Bold"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+
+                                        <StackPanel Grid.Column="1" Margin="12,0,16,0" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding PlayerName}"
+                                                           FontSize="16"
+                                                           FontWeight="Bold"
+                                                           LineHeight="22"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <Border Background="#43206F"
+                                                        BorderBrush="#8A45FF"
+                                                        BorderThickness="1"
+                                                        CornerRadius="10"
+                                                        Padding="8,2"
+                                                        Margin="10,0,0,0"
+                                                        Visibility="{Binding DefaultBadgeVisibility}">
+                                                    <TextBlock Text="当前" FontSize="11" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding DetailText}"
+                                                       FontSize="12"
+                                                       LineHeight="18"
+                                                       Foreground="{StaticResource TextMuted}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,3,0,0" />
+                                            <TextBlock Text="{Binding UuidText}"
+                                                       FontSize="12"
+                                                       LineHeight="18"
+                                                       Foreground="#9EA8BF"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding StatusText}"
+                                                   Foreground="{StaticResource Accent}"
+                                                   FontSize="12"
+                                                   LineHeight="18"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <TextBlock x:Name="EmptyTextBlock"
+                                   Text="暂无已登录账号。"
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontSize="14"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="DeleteButton"
+                            Content="删除账号"
+                            Style="{StaticResource SecondaryButton}"
+                            MinWidth="96"
+                            Click="Delete_Click" />
+                    <Button x:Name="SwitchButton"
+                            Content="切换"
+                            Style="{StaticResource PrimaryButton}"
+                            MinWidth="72"
+                            Margin="10,0,0,0"
+                            Click="Switch_Click" />
+                    <Button Content="取消"
+                            Style="{StaticResource SecondaryButton}"
+                            MinWidth="72"
+                            Margin="10,0,0,0"
+                            Click="Cancel_Click" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

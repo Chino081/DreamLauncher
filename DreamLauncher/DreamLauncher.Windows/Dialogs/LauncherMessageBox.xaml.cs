@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 
-namespace DreamLauncher.Windows;
+namespace DreamLauncher.Windows.Dialogs;
 
 public enum LauncherMessageKind
 {

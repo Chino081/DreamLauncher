@@ -6,7 +6,7 @@ using System.Windows.Input;
 using DreamLauncher.Core.Accounts;
 using DreamLauncher.Models.Accounts;
 
-namespace DreamLauncher.Windows;
+namespace DreamLauncher.Windows.Dialogs;
 
 public partial class AccountSwitchWindow : Window, INotifyPropertyChanged
 {

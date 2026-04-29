@@ -1,5 +1,6 @@
 using System.Windows;
 using DreamLauncher.Core.Accounts;
+using DreamLauncher.Windows.Dialogs;
 
 namespace DreamLauncher.Windows.Accounts;
 

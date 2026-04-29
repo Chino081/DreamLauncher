@@ -1,4 +1,4 @@
-<Window x:Class="DreamLauncher.Windows.AuthTypeSelectionWindow"
+<Window x:Class="DreamLauncher.Windows.Dialogs.AuthTypeSelectionWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="选择验证类型"

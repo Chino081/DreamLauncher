@@ -16,6 +16,7 @@ using DreamLauncher.Core.Remote;
 using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Config;
 using DreamLauncher.Windows.Accounts;
+using DreamLauncher.Windows.Dialogs;
 using DreamLauncher.Windows.Security;
 using DreamLauncher.Windows.ViewModels;
 using Microsoft.Win32;
@@ -68,6 +69,7 @@ public partial class MainWindow : Window
 
         _viewModel.MessageRequested += message =>
             LauncherMessageBox.Show(this, message, "DreamLauncher", LauncherMessageKind.Info);
+        _viewModel.GameLaunchSucceeded += Close;
 
         DataContext = _viewModel;
         _viewModel.PropertyChanged += async (_, args) =>

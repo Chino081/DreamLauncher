@@ -104,6 +104,8 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public event Action<string, string>? MessageRequested;
 
+    public event Action? GameLaunchSucceeded;
+
     public ClientInstallationViewModel? SelectedClient
     {
         get => _selectedClient;
@@ -551,6 +553,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
             StatusMessage = $"游戏已启动，进程 ID：{result.ProcessId}";
             OperationText = $"启动日志：{result.LogPath}";
+            GameLaunchSucceeded?.Invoke();
         });
     }
 

@@ -1,4 +1,4 @@
-<Window x:Class="DreamLauncher.Windows.LauncherMessageBox"
+<Window x:Class="DreamLauncher.Windows.Dialogs.LauncherMessageBox"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="DreamLauncher"

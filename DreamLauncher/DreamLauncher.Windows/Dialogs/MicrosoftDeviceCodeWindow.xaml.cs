@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Input;
 using DreamLauncher.Core.Accounts;
 
-namespace DreamLauncher.Windows;
+namespace DreamLauncher.Windows.Dialogs;
 
 public partial class MicrosoftDeviceCodeWindow : Window
 {

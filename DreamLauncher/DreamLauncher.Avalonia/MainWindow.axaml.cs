@@ -57,6 +57,7 @@ public partial class MainWindow : Window
             minecraftLaunchService);
 
         _viewModel.MessageRequested += async (title, message) => await MessageDialog.ShowAsync(this, title, message);
+        _viewModel.GameLaunchSucceeded += Close;
         DataContext = _viewModel;
         Opened += async (_, _) =>
         {

@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
-namespace DreamLauncher.Windows;
+namespace DreamLauncher.Windows.Dialogs;
 
 public enum AuthTypeChoice
 {

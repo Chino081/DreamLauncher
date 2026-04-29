@@ -6,6 +6,7 @@ namespace DreamLauncher.Core.Config;
 
 public sealed class LauncherConfigStore
 {
+    private const string LocalCdnRoot = @"F:\Chino\DreamtcTamracLauncherNew\local-cdn";
     private readonly LauncherPaths _paths;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -24,17 +25,28 @@ public sealed class LauncherConfigStore
             if (!File.Exists(_paths.ConfigPath))
             {
                 var created = new LauncherConfig();
+                ApplyLocalCdnDefaults(created);
                 await SaveCoreAsync(created, cancellationToken);
                 return created;
             }
 
             try
             {
-                await using var stream = File.OpenRead(_paths.ConfigPath);
-                return await JsonSerializer.DeserializeAsync<LauncherConfig>(
-                    stream,
-                    LauncherJson.Options,
-                    cancellationToken) ?? new LauncherConfig();
+                LauncherConfig config;
+                await using (var stream = File.OpenRead(_paths.ConfigPath))
+                {
+                    config = await JsonSerializer.DeserializeAsync<LauncherConfig>(
+                        stream,
+                        LauncherJson.Options,
+                        cancellationToken) ?? new LauncherConfig();
+                }
+
+                if (ApplyLocalCdnDefaults(config))
+                {
+                    await SaveCoreAsync(config, cancellationToken);
+                }
+
+                return config;
             }
             catch (JsonException)
             {
@@ -42,6 +54,7 @@ public sealed class LauncherConfigStore
                 File.Copy(_paths.ConfigPath, backupPath, overwrite: false);
 
                 var rebuilt = new LauncherConfig();
+                ApplyLocalCdnDefaults(rebuilt);
                 await SaveCoreAsync(rebuilt, cancellationToken);
                 return rebuilt;
             }
@@ -58,12 +71,33 @@ public sealed class LauncherConfigStore
         try
         {
             _paths.EnsureCreated();
+            ApplyLocalCdnDefaults(config);
             await SaveCoreAsync(config, cancellationToken);
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    private static bool ApplyLocalCdnDefaults(LauncherConfig config)
+    {
+        var changed = false;
+        changed |= SetIfDifferent(config.ClientsManifestUrl, Path.Combine(LocalCdnRoot, "clients.json"), value => config.ClientsManifestUrl = value);
+        changed |= SetIfDifferent(config.JavaRuntimesManifestUrl, Path.Combine(LocalCdnRoot, "java-runtimes.json"), value => config.JavaRuntimesManifestUrl = value);
+        changed |= SetIfDifferent(config.AnnouncementUrl, Path.Combine(LocalCdnRoot, "announcement.json"), value => config.AnnouncementUrl = value);
+        return changed;
+    }
+
+    private static bool SetIfDifferent(string? current, string value, Action<string> setValue)
+    {
+        if (string.Equals(current, value, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        setValue(value);
+        return true;
     }
 
     private async Task SaveCoreAsync(LauncherConfig config, CancellationToken cancellationToken)

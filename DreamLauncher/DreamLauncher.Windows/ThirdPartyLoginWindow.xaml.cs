@@ -23,7 +23,7 @@ public partial class ThirdPartyLoginWindow : Window
             string.IsNullOrWhiteSpace(Username) ||
             string.IsNullOrWhiteSpace(Password))
         {
-            MessageBox.Show(this, "请填写皮肤站地址、账号和密码。", "皮肤站登录", MessageBoxButton.OK, MessageBoxImage.Information);
+            LauncherMessageBox.Show(this, "请填写皮肤站地址、账号和密码。", "皮肤站登录", LauncherMessageKind.Info);
             return;
         }
 

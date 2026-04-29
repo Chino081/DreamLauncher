@@ -59,6 +59,12 @@ public sealed partial class JavaRuntimeManager
             }
         }
 
+        var detectedJava = await FindDetectedJavaAsync(requiredMajorVersion, cancellationToken);
+        if (detectedJava is not null)
+        {
+            return detectedJava;
+        }
+
         var systemVersion = await ProbeJavaMajorVersionAsync("java", cancellationToken);
         if (systemVersion >= requiredMajorVersion)
         {
@@ -71,6 +77,115 @@ public sealed partial class JavaRuntimeManager
         }
 
         return null;
+    }
+
+    private async Task<JavaRuntimeInfo?> FindDetectedJavaAsync(
+        int requiredMajorVersion,
+        CancellationToken cancellationToken)
+    {
+        var candidates = new List<JavaRuntimeInfo>();
+        foreach (var path in DiscoverInstalledJavaExecutables().Take(60))
+        {
+            var version = await ProbeJavaMajorVersionAsync(path, cancellationToken);
+            if (version < requiredMajorVersion)
+            {
+                continue;
+            }
+
+            candidates.Add(new JavaRuntimeInfo
+            {
+                JavaPath = path,
+                MajorVersion = version,
+                Source = "detected"
+            });
+        }
+
+        return candidates
+            .OrderBy(item => item.MajorVersion)
+            .ThenBy(item => item.JavaPath, PathComparer)
+            .FirstOrDefault();
+    }
+
+    private static IEnumerable<string> DiscoverInstalledJavaExecutables()
+    {
+        var paths = new HashSet<string>(PathComparer);
+        AddJavaCandidate(paths, Environment.GetEnvironmentVariable("JAVA_HOME"));
+
+        foreach (var programFiles in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(programFiles))
+            {
+                continue;
+            }
+
+            foreach (var vendorDirectory in new[] { "Zulu", "Java", "Eclipse Adoptium", "Microsoft" })
+            {
+                var directory = Path.Combine(programFiles, vendorDirectory);
+                if (!Directory.Exists(directory))
+                {
+                    continue;
+                }
+
+                foreach (var javaPath in SafeEnumerateJavaExecutables(directory).Take(30))
+                {
+                    AddJavaCandidate(paths, javaPath);
+                }
+            }
+        }
+
+        return paths;
+    }
+
+    private static IEnumerable<string> SafeEnumerateJavaExecutables(string directory)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(directory, "java.exe", SearchOption.AllDirectories).ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static void AddJavaCandidate(ISet<string> paths, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var path = Environment.ExpandEnvironmentVariables(value.Trim('"', ' '));
+        if (Directory.Exists(path))
+        {
+            path = Path.Combine(path, "bin", OperatingSystem.IsWindows() ? "java.exe" : "java");
+        }
+
+        if (File.Exists(path))
+        {
+            paths.Add(Path.GetFullPath(path));
+        }
+    }
+
+    public Task<int> ProbeJavaMajorVersionForPathAsync(
+        string javaPath,
+        CancellationToken cancellationToken = default)
+    {
+        return ProbeJavaMajorVersionAsync(NormalizeJavaPath(javaPath), cancellationToken);
+    }
+
+    public string NormalizeJavaPathForUserInput(string value)
+    {
+        return NormalizeJavaPath(value);
+    }
+
+    public string GetPrivateJavaExecutablePath(int majorVersion)
+    {
+        return GetPrivateJavaExecutable(majorVersion);
     }
 
     public async Task<JavaRuntimeInfo> InstallPrivateRuntimeAsync(
@@ -226,6 +341,9 @@ public sealed partial class JavaRuntimeManager
 
     private static StringComparison PathComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    private static StringComparer PathComparer =>
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     [GeneratedRegex(@"version\s+""(?<version>[^""]+)""", RegexOptions.IgnoreCase)]
     private static partial Regex JavaVersionRegex();

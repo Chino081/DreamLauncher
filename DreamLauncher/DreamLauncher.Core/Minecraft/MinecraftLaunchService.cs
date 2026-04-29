@@ -123,14 +123,16 @@ public sealed class MinecraftLaunchService
             throw new InvalidDataException("没有找到可用的 Minecraft 类路径。");
         }
 
+        var gameDirectory = GetVersionGameDirectory(versionJsonPath);
         var nativesDirectory = Path.Combine(minecraftDirectory, "natives", versionId);
+        Directory.CreateDirectory(gameDirectory);
         Directory.CreateDirectory(nativesDirectory);
 
         var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["auth_player_name"] = account.PlayerName,
             ["version_name"] = versionId,
-            ["game_directory"] = minecraftDirectory,
+            ["game_directory"] = gameDirectory,
             ["assets_root"] = Path.Combine(minecraftDirectory, "assets"),
             ["assets_index_name"] = assetIndex,
             ["auth_uuid"] = account.Uuid,
@@ -161,15 +163,7 @@ public sealed class MinecraftLaunchService
 
         AddThirdPartyAuthArguments(account, authlibInjectorJarPath, arguments);
         arguments.AddRange(SplitCommandLine(client.Definition.JvmArgs).Select(item => ReplaceVariables(item, variables)));
-
-        foreach (var argument in ReadArgumentList(root, "jvm"))
-        {
-            var replaced = ReplaceVariables(argument, variables);
-            if (replaced is not "${classpath}" and not "${natives_directory}")
-            {
-                arguments.Add(replaced);
-            }
-        }
+        AddVersionJvmArguments(root, variables, arguments);
 
         arguments.Add("-cp");
         arguments.Add(variables["classpath"]);
@@ -191,7 +185,13 @@ public sealed class MinecraftLaunchService
             arguments.Add(client.Definition.ServerAddress);
         }
 
-        return new LaunchPlan(minecraftDirectory, arguments);
+        return new LaunchPlan(gameDirectory, arguments);
+    }
+
+    private static string GetVersionGameDirectory(string versionJsonPath)
+    {
+        return Path.GetDirectoryName(versionJsonPath)
+            ?? throw new InvalidDataException("版本 JSON 路径无效。");
     }
 
     private static string FindVersionJson(string minecraftDirectory, ClientDefinition client)
@@ -374,6 +374,11 @@ public sealed class MinecraftLaunchService
                 continue;
             }
 
+            if (!IsAllowedByFeatureRules(rule))
+            {
+                continue;
+            }
+
             allowed = action?.Equals("allow", StringComparison.OrdinalIgnoreCase) == true;
             if (action?.Equals("disallow", StringComparison.OrdinalIgnoreCase) == true)
             {
@@ -382,6 +387,62 @@ public sealed class MinecraftLaunchService
         }
 
         return allowed;
+    }
+
+    private static bool IsAllowedByFeatureRules(JsonElement rule)
+    {
+        if (!rule.TryGetProperty("features", out var features) || features.ValueKind != JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        // 当前启动器没有启用 demo、quick play、自定义分辨率等 launcher features。
+        // Minecraft 版本 JSON 中带 features 的 allow 规则必须跳过，否则会把多个 quick play 参数同时传入。
+        foreach (var feature in features.EnumerateObject())
+        {
+            if (feature.Value.ValueKind == JsonValueKind.True)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void AddVersionJvmArguments(
+        JsonElement root,
+        IReadOnlyDictionary<string, string> variables,
+        ICollection<string> arguments)
+    {
+        var versionArguments = ReadArgumentList(root, "jvm").ToList();
+        for (var index = 0; index < versionArguments.Count; index++)
+        {
+            var argument = versionArguments[index];
+            if (IsClasspathSwitch(argument))
+            {
+                if (index + 1 < versionArguments.Count &&
+                    string.Equals(versionArguments[index + 1], "${classpath}", StringComparison.OrdinalIgnoreCase))
+                {
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (string.Equals(argument, "${classpath}", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            arguments.Add(ReplaceVariables(argument, variables));
+        }
+    }
+
+    private static bool IsClasspathSwitch(string argument)
+    {
+        return string.Equals(argument, "-cp", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(argument, "-classpath", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(argument, "--class-path", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ReadAssetIndex(JsonElement root)

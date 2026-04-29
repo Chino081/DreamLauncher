@@ -68,7 +68,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            LauncherMessageBox.Show(this, ex.Message, "保存失败", LauncherMessageKind.Warning);
         }
     }
 
@@ -91,7 +91,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "账号设置失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            LauncherMessageBox.Show(this, ex.Message, "账号设置失败", LauncherMessageKind.Warning);
         }
     }
 
@@ -102,14 +102,14 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var confirm = MessageBox.Show(
+        var confirm = LauncherMessageBox.Show(
             this,
             $"删除账号 {account.PlayerName}？",
             "删除账号",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+            LauncherMessageKind.Warning,
+            showCancel: true);
 
-        if (confirm != MessageBoxResult.Yes)
+        if (!confirm)
         {
             return;
         }
@@ -121,7 +121,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "删除失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            LauncherMessageBox.Show(this, ex.Message, "删除失败", LauncherMessageKind.Warning);
         }
     }
 

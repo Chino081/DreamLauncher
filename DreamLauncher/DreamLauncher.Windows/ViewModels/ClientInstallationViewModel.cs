@@ -81,6 +81,33 @@ public sealed class ClientInstallationViewModel : ObservableObject
         _ => "刷新状态"
     };
 
+    public string DownloadCenterActionText => Status switch
+    {
+        ClientInstallStatus.NotInstalled => "下载",
+        ClientInstallStatus.UpdateRequired => "更新",
+        ClientInstallStatus.VerificationFailed => "修复",
+        _ => PrimaryActionText
+    };
+
+    public bool ShowDownloadCenterAction =>
+        Status is ClientInstallStatus.NotInstalled
+            or ClientInstallStatus.UpdateRequired
+            or ClientInstallStatus.VerificationFailed;
+
+    public bool ShowDownloadCenterBadge => !ShowDownloadCenterAction;
+
+    public string DownloadCenterBadgeText => Status switch
+    {
+        ClientInstallStatus.Ready => "已下载",
+        ClientInstallStatus.Downloading => "下载中",
+        ClientInstallStatus.Extracting => "解压中",
+        ClientInstallStatus.Verifying => "校验中",
+        ClientInstallStatus.JavaMissing => "Java 缺失",
+        ClientInstallStatus.Disabled => "已禁用",
+        ClientInstallStatus.LaunchFailed => "启动失败",
+        _ => StatusText
+    };
+
     public bool CanRunPrimaryAction =>
         Status is ClientInstallStatus.NotInstalled
             or ClientInstallStatus.UpdateRequired
@@ -117,6 +144,10 @@ public sealed class ClientInstallationViewModel : ObservableObject
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(StatusBrush));
         OnPropertyChanged(nameof(PrimaryActionText));
+        OnPropertyChanged(nameof(DownloadCenterActionText));
+        OnPropertyChanged(nameof(ShowDownloadCenterAction));
+        OnPropertyChanged(nameof(ShowDownloadCenterBadge));
+        OnPropertyChanged(nameof(DownloadCenterBadgeText));
         OnPropertyChanged(nameof(CanRunPrimaryAction));
     }
 }

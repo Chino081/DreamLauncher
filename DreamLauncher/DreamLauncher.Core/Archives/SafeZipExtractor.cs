@@ -77,6 +77,92 @@ public sealed class SafeZipExtractor
         }
     }
 
+    public async Task ExtractMinecraftContentAsync(
+        string archivePath,
+        string destinationDirectory,
+        IProgress<LauncherOperationProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(archivePath))
+        {
+            throw new FileNotFoundException("客户端压缩包不存在。", archivePath);
+        }
+
+        Directory.CreateDirectory(destinationDirectory);
+        var destinationRoot = Path.GetFullPath(destinationDirectory);
+        using var archive = ZipFile.OpenRead(archivePath);
+
+        var entries = archive.Entries
+            .Where(entry => !IsDirectoryEntry(entry))
+            .Select(entry => new
+            {
+                Entry = entry,
+                RelativePath = TryGetMinecraftRelativePath(entry.FullName)
+            })
+            .Where(item => !string.IsNullOrWhiteSpace(item.RelativePath))
+            .ToArray();
+
+        if (entries.Length == 0)
+        {
+            throw new InvalidDataException("压缩包中没有找到 .minecraft 文件夹。");
+        }
+
+        var totalBytes = entries.Sum(item => Math.Max(0L, item.Entry.Length));
+        EnsureDiskSpace(destinationRoot, totalBytes);
+
+        long completedBytes = 0;
+        var completedEntries = 0;
+
+        foreach (var item in entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var targetPath = GetSafeEntryPath(destinationRoot, item.RelativePath!);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+
+            await using var source = item.Entry.Open();
+            await using var target = new FileStream(
+                targetPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 128 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+            var buffer = new byte[128 * 1024];
+            while (true)
+            {
+                var read = await source.ReadAsync(buffer, cancellationToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                completedBytes += read;
+
+                progress?.Report(new LauncherOperationProgress
+                {
+                    Stage = "extract",
+                    Message = $"正在解压 .minecraft/{item.RelativePath}",
+                    Progress = totalBytes == 0 ? null : (double)completedBytes / totalBytes,
+                    BytesCompleted = completedBytes,
+                    TotalBytes = totalBytes
+                });
+            }
+
+            completedEntries++;
+            progress?.Report(new LauncherOperationProgress
+            {
+                Stage = "extract",
+                Message = $"已解压 {completedEntries}/{entries.Length} 个文件",
+                Progress = entries.Length == 0 ? 1 : (double)completedEntries / entries.Length,
+                BytesCompleted = completedBytes,
+                TotalBytes = totalBytes
+            });
+        }
+    }
+
     private static string GetSafeEntryPath(string destinationRoot, string entryName)
     {
         var normalizedEntry = entryName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
@@ -99,6 +185,21 @@ public sealed class SafeZipExtractor
     {
         return entry.FullName.EndsWith("/", StringComparison.Ordinal) ||
                entry.FullName.EndsWith("\\", StringComparison.Ordinal);
+    }
+
+    private static string? TryGetMinecraftRelativePath(string entryName)
+    {
+        var normalized = entryName.Replace('\\', '/').Trim('/');
+        var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var minecraftIndex = Array.FindIndex(parts, part =>
+            string.Equals(part, ".minecraft", StringComparison.OrdinalIgnoreCase));
+
+        if (minecraftIndex < 0 || minecraftIndex >= parts.Length - 1)
+        {
+            return null;
+        }
+
+        return string.Join(Path.DirectorySeparatorChar, parts.Skip(minecraftIndex + 1));
     }
 
     private static void EnsureDiskSpace(string destinationRoot, long requiredBytes)

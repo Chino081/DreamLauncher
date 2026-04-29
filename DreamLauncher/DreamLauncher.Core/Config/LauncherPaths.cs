@@ -7,10 +7,14 @@ public sealed class LauncherPaths
 {
     public LauncherPaths(string? rootPath = null)
     {
+        ProgramDirectory = Path.GetFullPath(AppContext.BaseDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
         RootPath = string.IsNullOrWhiteSpace(rootPath)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DreamLauncher")
+            ? Path.Combine(ProgramDirectory, "DreamLauncher")
             : Path.GetFullPath(rootPath);
 
+        MinecraftDirectory = Path.Combine(ProgramDirectory, ".minecraft");
         ConfigPath = Path.Combine(RootPath, "config.json");
         ClientsPath = Path.Combine(RootPath, "clients");
         RuntimePath = Path.Combine(RootPath, "runtime");
@@ -23,7 +27,11 @@ public sealed class LauncherPaths
         LogsPath = Path.Combine(RootPath, "logs");
     }
 
+    public string ProgramDirectory { get; }
+
     public string RootPath { get; }
+
+    public string MinecraftDirectory { get; }
 
     public string ConfigPath { get; }
 
@@ -65,6 +73,11 @@ public sealed class LauncherPaths
     public string GetClientConfigPath(ClientDefinition client)
     {
         return Path.Combine(GetClientDirectory(client), "client.json");
+    }
+
+    public string GetClientLaunchDirectory(ClientDefinition client)
+    {
+        return ProgramDirectory;
     }
 
     public string GetPrivateJavaDirectory(int majorVersion)

@@ -43,7 +43,7 @@ public sealed class ClientManager
             {
                 Definition = client,
                 LocalConfig = localConfig,
-                InstallPath = _paths.GetClientDirectory(client),
+                InstallPath = _paths.GetClientLaunchDirectory(client),
                 MemoryMb = settings?.MemoryMb ?? client.DefaultMemoryMb,
                 JavaPath = settings?.JavaPath,
                 Status = GetStatus(client, localConfig)
@@ -74,8 +74,9 @@ public sealed class ClientManager
     public Task DeleteClientAsync(ClientDefinition client, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var clientDirectory = _paths.GetClientDirectory(client);
-        SafeDirectory.DeleteChildDirectory(_paths.ClientsPath, clientDirectory);
+        var metadataDirectory = _paths.GetClientDirectory(client);
+        SafeDirectory.DeleteChildDirectory(_paths.ClientsPath, metadataDirectory);
+        SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, _paths.MinecraftDirectory);
         return Task.CompletedTask;
     }
 
@@ -120,8 +121,11 @@ public sealed class ClientManager
             progress,
             cancellationToken);
 
-        var finalDirectory = _paths.GetClientDirectory(client);
-        var stagingDirectory = Path.Combine(_paths.ClientsPath, $"{SanitizeFileName(client.Id)}.staging-{Guid.NewGuid():N}");
+        var finalDirectory = _paths.MinecraftDirectory;
+        var metadataDirectory = _paths.GetClientDirectory(client);
+        var stagingDirectory = Path.Combine(
+            _paths.ProgramDirectory,
+            $".minecraft.staging-{SanitizeFileName(client.Id)}-{Guid.NewGuid():N}");
 
         try
         {
@@ -132,24 +136,24 @@ public sealed class ClientManager
                 Progress = 0
             });
 
-            await _extractor.ExtractAsync(packPath, stagingDirectory, progress, cancellationToken);
-            await WriteLocalConfigAsync(stagingDirectory, client, cancellationToken);
+            await _extractor.ExtractMinecraftContentAsync(packPath, stagingDirectory, progress, cancellationToken);
 
             progress?.Report(new LauncherOperationProgress
             {
                 Stage = "install",
-                Message = "正在写入客户端目录",
+                Message = "正在写入 .minecraft 目录",
                 Progress = null
             });
 
-            SafeDirectory.DeleteChildDirectory(_paths.ClientsPath, finalDirectory);
+            SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, finalDirectory);
             Directory.Move(stagingDirectory, finalDirectory);
+            await WriteLocalConfigAsync(metadataDirectory, client, cancellationToken);
         }
         catch
         {
             if (Directory.Exists(stagingDirectory))
             {
-                SafeDirectory.DeleteChildDirectory(_paths.ClientsPath, stagingDirectory);
+                SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, stagingDirectory);
             }
 
             throw;
@@ -173,6 +177,16 @@ public sealed class ClientManager
         if (localConfig is null)
         {
             return ClientInstallStatus.NotInstalled;
+        }
+
+        if (!Directory.Exists(_paths.MinecraftDirectory))
+        {
+            return ClientInstallStatus.NotInstalled;
+        }
+
+        if (!HasRequiredClientFiles(client))
+        {
+            return ClientInstallStatus.VerificationFailed;
         }
 
         if (!string.Equals(localConfig.PackSha256, client.PackSha256, StringComparison.OrdinalIgnoreCase) ||
@@ -208,6 +222,71 @@ public sealed class ClientManager
         }
     }
 
+    private bool HasRequiredClientFiles(ClientDefinition client)
+    {
+        var minecraftDirectory = _paths.MinecraftDirectory;
+        if (!Directory.Exists(minecraftDirectory))
+        {
+            return false;
+        }
+
+        if (!Directory.Exists(Path.Combine(minecraftDirectory, "libraries")) ||
+            !Directory.Exists(Path.Combine(minecraftDirectory, "assets")))
+        {
+            return false;
+        }
+
+        var versionJsonPath = FindVersionJson(minecraftDirectory, client);
+        if (versionJsonPath is null)
+        {
+            return false;
+        }
+
+        var versionJarPath = Path.ChangeExtension(versionJsonPath, ".jar");
+        return File.Exists(versionJarPath);
+    }
+
+    private static string? FindVersionJson(string minecraftDirectory, ClientDefinition client)
+    {
+        var versionsDirectory = Path.Combine(minecraftDirectory, "versions");
+        if (!Directory.Exists(versionsDirectory))
+        {
+            return null;
+        }
+
+        var candidates = new List<string>
+        {
+            Path.Combine(versionsDirectory, client.MinecraftVersion, client.MinecraftVersion + ".json")
+        };
+
+        if (!string.Equals(client.Loader, "vanilla", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(client.LoaderVersion))
+        {
+            candidates.Add(Path.Combine(
+                versionsDirectory,
+                $"{client.MinecraftVersion}-{client.Loader}-{client.LoaderVersion}",
+                $"{client.MinecraftVersion}-{client.Loader}-{client.LoaderVersion}.json"));
+            candidates.Add(Path.Combine(
+                versionsDirectory,
+                $"{client.Loader}-{client.MinecraftVersion}-{client.LoaderVersion}",
+                $"{client.Loader}-{client.MinecraftVersion}-{client.LoaderVersion}.json"));
+        }
+
+        var found = candidates.FirstOrDefault(File.Exists);
+        if (found is not null)
+        {
+            return found;
+        }
+
+        return Directory
+            .EnumerateFiles(versionsDirectory, "*.json", SearchOption.AllDirectories)
+            .FirstOrDefault(path =>
+                path.Contains(client.MinecraftVersion, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(client.LoaderVersion) ||
+                 path.Contains(client.LoaderVersion, StringComparison.OrdinalIgnoreCase) ||
+                 path.Contains(client.Loader, StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static async Task WriteLocalConfigAsync(
         string clientDirectory,
         ClientDefinition client,
@@ -227,6 +306,7 @@ public sealed class ClientManager
         };
 
         var configPath = Path.Combine(clientDirectory, "client.json");
+        Directory.CreateDirectory(clientDirectory);
         await using var stream = new FileStream(configPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await JsonSerializer.SerializeAsync(stream, localConfig, LauncherJson.Options, cancellationToken);
     }

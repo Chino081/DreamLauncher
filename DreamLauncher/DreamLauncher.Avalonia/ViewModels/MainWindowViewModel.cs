@@ -11,12 +11,14 @@ using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Config;
 using DreamLauncher.Models.Java;
 using DreamLauncher.Models.Operations;
+using System.Runtime.InteropServices;
 
 namespace DreamLauncher.Avalonia.ViewModels;
 
 public sealed class MainWindowViewModel : ObservableObject
 {
     private readonly LauncherConfigStore _configStore;
+    private readonly LauncherPaths _paths;
     private readonly RemoteConfigClient _remoteConfigClient;
     private readonly ClientManager _clientManager;
     private readonly JavaRuntimeManager _javaRuntimeManager;
@@ -47,6 +49,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private CancellationTokenSource? _operationCancellation;
 
     public MainWindowViewModel(
+        LauncherPaths paths,
         LauncherConfigStore configStore,
         RemoteConfigClient remoteConfigClient,
         ClientManager clientManager,
@@ -55,6 +58,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ISecureTokenStore tokenStore,
         MinecraftLaunchService minecraftLaunchService)
     {
+        _paths = paths;
         _configStore = configStore;
         _remoteConfigClient = remoteConfigClient;
         _clientManager = clientManager;
@@ -73,12 +77,7 @@ public sealed class MainWindowViewModel : ObservableObject
         JavaRuntimeOptions.Add(JavaRuntimeOption.Auto("启动时自动检测"));
         SelectedJavaRuntimeOption = JavaRuntimeOptions[0];
 
-        MemoryPresetOptions.Add(new MemoryPresetOption("自动选择", null));
-        MemoryPresetOptions.Add(new MemoryPresetOption("2048 MB", 2048));
-        MemoryPresetOptions.Add(new MemoryPresetOption("4096 MB", 4096));
-        MemoryPresetOptions.Add(new MemoryPresetOption("8192 MB", 8192));
-        MemoryPresetOptions.Add(new MemoryPresetOption("12288 MB", 12288));
-        SelectedMemoryPreset = MemoryPresetOptions[0];
+        RebuildMemoryPresetOptions(null);
     }
 
     public ObservableCollection<ClientInstallationViewModel> Clients { get; } = [];
@@ -225,27 +224,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public string MemoryMbText
     {
         get => _memoryMbText;
-        set
-        {
-            if (SetProperty(ref _memoryMbText, value))
-            {
-                SelectMemoryPresetFromText();
-                UpdateMemoryStatusText();
-            }
-        }
+        set => SetMemoryMbText(value);
     }
 
     public string JavaPathText
     {
         get => _javaPathText;
-        set
-        {
-            if (SetProperty(ref _javaPathText, value))
-            {
-                RebuildJavaRuntimeOptions(value);
-                UpdateJavaRuntimeStatusText(value);
-            }
-        }
+        set => SetJavaPathText(value, rebuildOptions: true);
     }
 
     public JavaRuntimeOption? SelectedJavaRuntimeOption
@@ -258,7 +243,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 return;
             }
 
-            JavaPathText = value.JavaPath ?? "";
+            SetJavaPathText(value.JavaPath ?? "", rebuildOptions: false);
         }
     }
 
@@ -272,9 +257,24 @@ public sealed class MainWindowViewModel : ObservableObject
                 return;
             }
 
-            MemoryMbText = value.MemoryMb?.ToString() ?? "";
+            if (value.IsAutomatic)
+            {
+                SetMemoryMbText(GetDefaultMemoryMb().ToString());
+            }
+            else if (!value.IsCustom && value.MemoryMb.HasValue)
+            {
+                SetMemoryMbText(value.MemoryMb.Value.ToString());
+            }
+
+            OnPropertyChanged(nameof(IsCustomMemorySelected));
+            OnPropertyChanged(nameof(CustomMemoryInputOpacity));
+            UpdateMemoryStatusText();
         }
     }
+
+    public bool IsCustomMemorySelected => SelectedMemoryPreset?.IsCustom == true;
+
+    public double CustomMemoryInputOpacity => IsCustomMemorySelected ? 1 : 0.55;
 
     public string RetryCountText
     {
@@ -388,10 +388,11 @@ public sealed class MainWindowViewModel : ObservableObject
                     config.ClientSettings[SelectedClient.Id] = settings;
                 }
 
-                settings.MemoryMb = int.TryParse(MemoryMbText, out var memory)
-                    ? Math.Clamp(memory, 1024, 65536)
-                    : null;
+                settings.MemoryMb = ReadSelectedMemoryMb();
                 settings.JavaPath = string.IsNullOrWhiteSpace(JavaPathText) ? null : JavaPathText.Trim();
+                SelectedClient.Installation.MemoryMb = settings.MemoryMb ?? SelectedClient.Installation.Definition.DefaultMemoryMb;
+                SelectedClient.Installation.JavaPath = settings.JavaPath;
+                SelectedClient.Update(SelectedClient.Installation);
             }
 
             await _configStore.SaveAsync(config, cancellationToken);
@@ -409,21 +410,65 @@ public sealed class MainWindowViewModel : ObservableObject
                 return;
             }
 
-            var requiredVersion = SelectedClient.Installation.Definition.JavaVersion;
+            var selectedClient = SelectedClient;
+            var requiredVersion = selectedClient.Installation.Definition.JavaVersion;
             StatusMessage = $"正在检测 Java {requiredVersion}";
-            var java = await _javaRuntimeManager.ResolveAsync(requiredVersion, null, cancellationToken);
-            if (java is null)
+            JavaRuntimeStatusText = "正在后台检测 Java 环境...";
+
+            var config = await _configStore.LoadAsync(cancellationToken);
+            _currentConfig = config;
+            var manualJavaPath = config.ClientSettings.GetValueOrDefault(selectedClient.Id)?.JavaPath;
+            var options = await BuildJavaRuntimeOptionsAsync(requiredVersion, manualJavaPath, cancellationToken);
+            ReplaceJavaRuntimeOptions(options, manualJavaPath);
+            SetJavaPathText(manualJavaPath ?? "", rebuildOptions: false);
+
+            var compatibleCount = options.Count(option => !option.IsAutomatic && option.IsCompatible);
+            if (compatibleCount == 0)
             {
-                JavaPathText = "";
                 JavaRuntimeStatusText = $"未检测到 Java {requiredVersion} 或更高版本，启动时会提示安装。";
                 StatusMessage = $"未找到 Java {requiredVersion}";
                 MessageRequested?.Invoke("Java 环境", $"未检测到 Java {requiredVersion} 或更高版本，可以留空让启动器在启动时自动下载。");
                 return;
             }
 
-            JavaPathText = java.JavaPath;
-            JavaRuntimeStatusText = $"当前推荐：{java.JavaPath}";
-            StatusMessage = $"已选择 Java {java.MajorVersion}：{java.JavaPath}";
+            var recommended = options.FirstOrDefault(option => option.IsAutomatic)?.RecommendedPath;
+            JavaRuntimeStatusText = $"当前客户端：{selectedClient.Name}，需要 Java {requiredVersion}。已检测到 {compatibleCount} 个可用 Java。";
+            StatusMessage = string.IsNullOrWhiteSpace(recommended)
+                ? $"已检测到 {compatibleCount} 个 Java"
+                : $"当前推荐 Java：{recommended}";
+        });
+    }
+
+    public async Task RefreshSettingsOptionsAsync()
+    {
+        await RunGuardedAsync(async cancellationToken =>
+        {
+            var config = await _configStore.LoadAsync(cancellationToken);
+            _currentConfig = config;
+            ApplyDownloadSettings(config);
+
+            var selectedClient = SelectedClient;
+            if (selectedClient is null)
+            {
+                RebuildMemoryPresetOptions(null);
+                SetJavaPathText("", rebuildOptions: true);
+                JavaRuntimeStatusText = "当前未选择客户端，自动选择会按 Java 17 检测。";
+                return;
+            }
+
+            var settings = config.ClientSettings.GetValueOrDefault(selectedClient.Id);
+            RebuildMemoryPresetOptions(settings?.MemoryMb);
+
+            var requiredVersion = selectedClient.Installation.Definition.JavaVersion;
+            JavaRuntimeStatusText = "正在后台检测 Java 环境...";
+            var options = await BuildJavaRuntimeOptionsAsync(requiredVersion, settings?.JavaPath, cancellationToken);
+            ReplaceJavaRuntimeOptions(options, settings?.JavaPath);
+            SetJavaPathText(settings?.JavaPath ?? "", rebuildOptions: false);
+
+            var compatibleCount = options.Count(option => !option.IsAutomatic && option.IsCompatible);
+            JavaRuntimeStatusText = compatibleCount == 0
+                ? $"当前客户端：{selectedClient.Name}，需要 Java {requiredVersion}。未检测到可用 Java。"
+                : $"当前客户端：{selectedClient.Name}，需要 Java {requiredVersion}。已检测到 {compatibleCount} 个可用 Java。";
         });
     }
 
@@ -670,9 +715,8 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         var settings = config.ClientSettings.GetValueOrDefault(selectedClient.Id);
-        MemoryMbText = settings?.MemoryMb?.ToString() ?? "";
+        RebuildMemoryPresetOptions(settings?.MemoryMb);
         JavaPathText = settings?.JavaPath ?? "";
-        UpdateMemoryStatusText();
         UpdateJavaRuntimeStatusText(JavaPathText);
     }
 
@@ -708,26 +752,319 @@ public sealed class MainWindowViewModel : ObservableObject
         }
     }
 
-    private void SelectMemoryPresetFromText()
+    private void ReplaceJavaRuntimeOptions(IReadOnlyList<JavaRuntimeOption> options, string? selectedPath)
     {
-        if (_syncingMemoryPreset)
+        try
+        {
+            _syncingJavaOptions = true;
+            JavaRuntimeOptions.Clear();
+            foreach (var option in options)
+            {
+                JavaRuntimeOptions.Add(option);
+            }
+
+            var normalized = string.IsNullOrWhiteSpace(selectedPath) ? null : selectedPath.Trim();
+            SelectedJavaRuntimeOption = normalized is null
+                ? JavaRuntimeOptions.FirstOrDefault()
+                : JavaRuntimeOptions.FirstOrDefault(option =>
+                      !option.IsAutomatic &&
+                      string.Equals(option.JavaPath, normalized, StringComparison.OrdinalIgnoreCase))
+                  ?? JavaRuntimeOptions.FirstOrDefault();
+        }
+        finally
+        {
+            _syncingJavaOptions = false;
+        }
+    }
+
+    private void SetJavaPathText(string value, bool rebuildOptions)
+    {
+        if (!SetProperty(ref _javaPathText, value, nameof(JavaPathText)))
         {
             return;
         }
 
+        if (rebuildOptions)
+        {
+            RebuildJavaRuntimeOptions(value);
+        }
+
+        UpdateJavaRuntimeStatusText(value);
+    }
+
+    private void SetMemoryMbText(string value)
+    {
+        if (!SetProperty(ref _memoryMbText, value, nameof(MemoryMbText)))
+        {
+            return;
+        }
+
+        UpdateMemoryStatusText();
+    }
+
+    private void RebuildMemoryPresetOptions(int? savedMemory)
+    {
         try
         {
             _syncingMemoryPreset = true;
-            var match = int.TryParse(MemoryMbText, out var memory)
-                ? MemoryPresetOptions.FirstOrDefault(item => item.MemoryMb == memory)
-                : MemoryPresetOptions.FirstOrDefault(item => item.MemoryMb is null);
+            var defaultMemory = GetDefaultMemoryMb();
+            MemoryPresetOptions.Clear();
+            MemoryPresetOptions.Add(MemoryPresetOption.Auto(defaultMemory));
+            foreach (var memory in new[] { 2048, 4096, 6144, 8192, 12288, 16384 })
+            {
+                MemoryPresetOptions.Add(MemoryPresetOption.Preset(memory));
+            }
 
-            SelectedMemoryPreset = match ?? MemoryPresetOptions.FirstOrDefault(item => item.MemoryMb is null);
+            MemoryPresetOptions.Add(MemoryPresetOption.Custom());
+
+            var selected = savedMemory.HasValue
+                ? MemoryPresetOptions.FirstOrDefault(item => item.MemoryMb == savedMemory.Value)
+                  ?? MemoryPresetOptions.First(item => item.IsCustom)
+                : MemoryPresetOptions.First(item => item.IsAutomatic);
+
+            SelectedMemoryPreset = selected;
+            _memoryMbText = savedMemory?.ToString() ?? defaultMemory.ToString();
+            OnPropertyChanged(nameof(MemoryMbText));
         }
         finally
         {
             _syncingMemoryPreset = false;
         }
+
+        OnPropertyChanged(nameof(IsCustomMemorySelected));
+        OnPropertyChanged(nameof(CustomMemoryInputOpacity));
+        UpdateMemoryStatusText();
+    }
+
+    private async Task<IReadOnlyList<JavaRuntimeOption>> BuildJavaRuntimeOptionsAsync(
+        int requiredVersion,
+        string? manualJavaPath,
+        CancellationToken cancellationToken)
+    {
+        var recommendedTask = _javaRuntimeManager.ResolveAsync(requiredVersion, null, cancellationToken);
+        var discoveredTask = DiscoverJavaRuntimeOptionsAsync(requiredVersion, cancellationToken);
+        var recommended = await recommendedTask;
+
+        var options = new List<JavaRuntimeOption>
+        {
+            JavaRuntimeOption.Auto(
+                recommended is null
+                    ? $"未找到 Java {requiredVersion} 或更高版本"
+                    : recommended.JavaPath,
+                recommended?.JavaPath)
+        };
+
+        foreach (var option in await discoveredTask)
+        {
+            if (options.Any(item =>
+                    !item.IsAutomatic &&
+                    string.Equals(item.JavaPath, option.JavaPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            options.Add(option);
+        }
+
+        if (!string.IsNullOrWhiteSpace(manualJavaPath) &&
+            options.All(item => !string.Equals(item.JavaPath, manualJavaPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            var manualVersion = await _javaRuntimeManager.ProbeJavaMajorVersionForPathAsync(manualJavaPath, cancellationToken);
+            var isCompatible = manualVersion >= requiredVersion;
+            options.Add(JavaRuntimeOption.Manual(
+                $"手动指定 | {FormatJavaVersion(manualVersion)} | {manualJavaPath}{FormatCompatibilitySuffix(isCompatible, requiredVersion)}",
+                manualJavaPath,
+                manualVersion,
+                isCompatible));
+        }
+
+        return options;
+    }
+
+    private Task<IReadOnlyList<JavaRuntimeOption>> DiscoverJavaRuntimeOptionsAsync(
+        int requiredVersion,
+        CancellationToken cancellationToken)
+    {
+        return Task.Run<IReadOnlyList<JavaRuntimeOption>>(async () =>
+        {
+            var paths = DiscoverJavaCandidatePaths(requiredVersion);
+            var options = new List<JavaRuntimeOption>();
+            foreach (var path in paths.Take(80))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var version = await _javaRuntimeManager
+                    .ProbeJavaMajorVersionForPathAsync(path, cancellationToken)
+                    .ConfigureAwait(false);
+                if (version <= 0)
+                {
+                    continue;
+                }
+
+                var isCompatible = version >= requiredVersion;
+                options.Add(JavaRuntimeOption.Manual(
+                    $"{GetJavaDisplayName(path, version)} | {RuntimeInformation.ProcessArchitecture} | {path}{FormatCompatibilitySuffix(isCompatible, requiredVersion)}",
+                    path,
+                    version,
+                    isCompatible));
+            }
+
+            return options
+                .OrderByDescending(option => option.IsCompatible)
+                .ThenByDescending(option => option.MajorVersion)
+                .ThenBy(option => option.JavaPath, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }, cancellationToken);
+    }
+
+    private string[] DiscoverJavaCandidatePaths(int requiredVersion)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddJavaCandidate(paths, Environment.GetEnvironmentVariable("JAVA_HOME"));
+        AddJavaCandidate(paths, Environment.GetEnvironmentVariable("JDK_HOME"));
+
+        foreach (var version in new[] { requiredVersion, 8, 17, 21, 25 })
+        {
+            AddJavaCandidate(paths, _javaRuntimeManager.GetPrivateJavaExecutablePath(version));
+        }
+
+        if (Directory.Exists(_paths.JavaRuntimePath))
+        {
+            AddJavaCandidate(paths, _paths.JavaRuntimePath);
+            foreach (var javaHome in SafeEnumerateDirectories(_paths.JavaRuntimePath).Take(80))
+            {
+                AddJavaCandidate(paths, javaHome);
+            }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            AddProgramFilesJavaCandidates(paths);
+        }
+        else
+        {
+            AddUnixJavaCandidates(paths);
+        }
+
+        return paths.ToArray();
+    }
+
+    private static void AddJavaCandidate(ISet<string> paths, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var path = Environment.ExpandEnvironmentVariables(value.Trim('"', ' '));
+        if (Directory.Exists(path))
+        {
+            path = Path.Combine(path, "bin", OperatingSystem.IsWindows() ? "java.exe" : "java");
+        }
+
+        if (File.Exists(path))
+        {
+            paths.Add(Path.GetFullPath(path));
+        }
+    }
+
+    private static void AddProgramFilesJavaCandidates(ISet<string> paths)
+    {
+        foreach (var programFiles in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(programFiles))
+            {
+                continue;
+            }
+
+            foreach (var vendorDirectory in new[] { "Zulu", "Java", "Eclipse Adoptium", "Microsoft", "BellSoft", "Amazon Corretto" })
+            {
+                var directory = Path.Combine(programFiles, vendorDirectory);
+                if (!Directory.Exists(directory))
+                {
+                    continue;
+                }
+
+                AddJavaCandidate(paths, directory);
+                foreach (var javaHome in SafeEnumerateDirectories(directory).Take(80))
+                {
+                    AddJavaCandidate(paths, javaHome);
+                }
+            }
+        }
+    }
+
+    private static void AddUnixJavaCandidates(ISet<string> paths)
+    {
+        foreach (var directory in new[]
+                 {
+                     "/Library/Java/JavaVirtualMachines",
+                     "/usr/lib/jvm",
+                     "/usr/java",
+                     "/opt/java",
+                     "/opt/homebrew/opt",
+                     "/usr/local/opt"
+                 })
+        {
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            AddJavaCandidate(paths, directory);
+            foreach (var javaHome in SafeEnumerateDirectories(directory).Take(100))
+            {
+                AddJavaCandidate(paths, javaHome);
+                var contentsHome = Path.Combine(javaHome, "Contents", "Home");
+                AddJavaCandidate(paths, contentsHome);
+            }
+        }
+    }
+
+    private static IEnumerable<string> SafeEnumerateDirectories(string directory)
+    {
+        try
+        {
+            return Directory.EnumerateDirectories(directory).ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private int GetDefaultMemoryMb()
+    {
+        return Math.Max(1024, SelectedClient?.Installation.Definition.DefaultMemoryMb ?? 4096);
+    }
+
+    private int? ReadSelectedMemoryMb()
+    {
+        if (SelectedMemoryPreset is not { } option || option.IsAutomatic)
+        {
+            return null;
+        }
+
+        if (!option.IsCustom)
+        {
+            return option.MemoryMb;
+        }
+
+        if (!int.TryParse(MemoryMbText.Trim(), out var memoryMb))
+        {
+            throw new InvalidOperationException("最大内存需要填写数字，单位是 MB。");
+        }
+
+        if (memoryMb is < 1024 or > 65536)
+        {
+            throw new InvalidOperationException("最大内存建议填写 1024 到 65536 MB。");
+        }
+
+        return memoryMb;
     }
 
     private void UpdateJavaRuntimeStatusText(string? selectedPath)
@@ -755,8 +1092,8 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         var defaultMemory = Math.Max(1024, selectedClient.Installation.Definition.DefaultMemoryMb);
-        MemoryStatusText = int.TryParse(MemoryMbText, out var memory)
-            ? $"当前客户端：{selectedClient.Name}，最大内存 {FormatMemory(memory)}。"
+        MemoryStatusText = SelectedMemoryPreset is { IsAutomatic: false }
+            ? $"当前客户端：{selectedClient.Name}，最大内存 {FormatMemory(int.TryParse(MemoryMbText, out var memory) ? memory : defaultMemory)}。"
             : $"当前客户端：{selectedClient.Name}，自动使用 {FormatMemory(defaultMemory)}。";
     }
 
@@ -774,6 +1111,47 @@ public sealed class MainWindowViewModel : ObservableObject
 
         var name = string.IsNullOrWhiteSpace(version) ? "Java" : $"Zulu JDK {version}";
         return $"{name} | x64 | {path}";
+    }
+
+    private static string GetJavaDisplayName(string path, int version)
+    {
+        var lowerPath = path.ToLowerInvariant();
+        if (lowerPath.Contains("zulu"))
+        {
+            return $"Zulu JDK {version}";
+        }
+
+        if (lowerPath.Contains("temurin") || lowerPath.Contains("adoptium"))
+        {
+            return $"Temurin JDK {version}";
+        }
+
+        if (lowerPath.Contains("corretto"))
+        {
+            return $"Corretto JDK {version}";
+        }
+
+        if (lowerPath.Contains("microsoft"))
+        {
+            return $"Microsoft JDK {version}";
+        }
+
+        if (lowerPath.Contains("bellsoft") || lowerPath.Contains("liberica"))
+        {
+            return $"Liberica JDK {version}";
+        }
+
+        return $"Java {version}";
+    }
+
+    private static string FormatJavaVersion(int majorVersion)
+    {
+        return majorVersion > 0 ? $"Java {majorVersion}" : "未知版本";
+    }
+
+    private static string FormatCompatibilitySuffix(bool isCompatible, int requiredVersion)
+    {
+        return isCompatible ? "" : $"（不兼容，需 Java {requiredVersion}+）";
     }
 
     private async Task RunGuardedAsync(Func<CancellationToken, Task> action)
@@ -892,14 +1270,34 @@ public sealed class MainWindowViewModel : ObservableObject
 
 public sealed record JavaRuntimeOption(string DisplayName, string? JavaPath)
 {
-    public static JavaRuntimeOption Auto(string recommended)
+    public int MajorVersion { get; init; }
+
+    public bool IsAutomatic { get; init; }
+
+    public bool IsCompatible { get; init; } = true;
+
+    public string? RecommendedPath { get; init; }
+
+    public static JavaRuntimeOption Auto(string recommended, string? recommendedPath = null)
     {
-        return new JavaRuntimeOption($"自动选择（当前推荐：{recommended}）", null);
+        return new JavaRuntimeOption($"自动选择（当前推荐：{recommended}）", null)
+        {
+            IsAutomatic = true,
+            RecommendedPath = recommendedPath
+        };
     }
 
-    public static JavaRuntimeOption Manual(string displayName, string javaPath)
+    public static JavaRuntimeOption Manual(
+        string displayName,
+        string javaPath,
+        int majorVersion = 0,
+        bool isCompatible = true)
     {
-        return new JavaRuntimeOption(displayName, javaPath);
+        return new JavaRuntimeOption(displayName, javaPath)
+        {
+            MajorVersion = majorVersion,
+            IsCompatible = isCompatible
+        };
     }
 
     public override string ToString()
@@ -910,8 +1308,40 @@ public sealed record JavaRuntimeOption(string DisplayName, string? JavaPath)
 
 public sealed record MemoryPresetOption(string DisplayName, int? MemoryMb)
 {
+    public bool IsAutomatic { get; init; }
+
+    public bool IsCustom { get; init; }
+
+    public static MemoryPresetOption Auto(int memoryMb)
+    {
+        return new MemoryPresetOption($"自动选择（当前推荐：{FormatMemory(memoryMb)}）", null)
+        {
+            IsAutomatic = true
+        };
+    }
+
+    public static MemoryPresetOption Preset(int memoryMb)
+    {
+        return new MemoryPresetOption(FormatMemory(memoryMb), memoryMb);
+    }
+
+    public static MemoryPresetOption Custom()
+    {
+        return new MemoryPresetOption("自定义", null)
+        {
+            IsCustom = true
+        };
+    }
+
     public override string ToString()
     {
         return DisplayName;
+    }
+
+    private static string FormatMemory(int memoryMb)
+    {
+        return memoryMb >= 1024 && memoryMb % 1024 == 0
+            ? $"{memoryMb / 1024} GB"
+            : $"{memoryMb} MB";
     }
 }

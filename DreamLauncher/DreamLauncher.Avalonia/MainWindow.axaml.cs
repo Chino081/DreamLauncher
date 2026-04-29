@@ -47,6 +47,7 @@ public partial class MainWindow : Window
         var minecraftLaunchService = new MinecraftLaunchService(paths);
 
         _viewModel = new MainWindowViewModel(
+            paths,
             configStore,
             remoteConfigClient,
             clientManager,
@@ -74,9 +75,10 @@ public partial class MainWindow : Window
         SetActivePage("download");
     }
 
-    private void SettingsNav_Click(object? sender, RoutedEventArgs e)
+    private async void SettingsNav_Click(object? sender, RoutedEventArgs e)
     {
         SetActivePage("settings");
+        await _viewModel.RefreshSettingsOptionsAsync();
     }
 
     private async void SwitchAccount_Click(object? sender, RoutedEventArgs e)

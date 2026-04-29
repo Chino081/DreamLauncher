@@ -538,7 +538,12 @@
                                 </DataTemplate>
                               </ComboBox.ItemTemplate>
                             </ComboBox>
-                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding MemoryMbText}" Height="36" />
+                            <TextBox Grid.Row="2"
+                                     Grid.Column="1"
+                                     Text="{Binding MemoryMbText}"
+                                     Height="36"
+                                     IsEnabled="{Binding IsCustomMemorySelected}"
+                                     Opacity="{Binding CustomMemoryInputOpacity}" />
                             <TextBlock Grid.Row="2" Grid.Column="2" Text="MB" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" HorizontalAlignment="Right" />
                             <TextBlock Grid.Row="4"
                                        Grid.ColumnSpan="3"

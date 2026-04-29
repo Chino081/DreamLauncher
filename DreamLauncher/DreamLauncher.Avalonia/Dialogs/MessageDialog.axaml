@@ -1,19 +1,49 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="DreamLauncher.Avalonia.Dialogs.MessageDialog"
-        Width="420"
-        Height="220"
+        Width="470"
+        Height="280"
+        MinWidth="470"
+        MinHeight="280"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         SystemDecorations="None"
-        Background="Transparent">
-  <Border Margin="10" Padding="24" CornerRadius="20" Background="#20243D" BorderBrush="#5C6683" BorderThickness="1">
+        Background="Transparent"
+        TransparencyLevelHint="Transparent">
+  <Border Margin="10"
+          Padding="30"
+          CornerRadius="24"
+          Background="{StaticResource DialogShellBrush}"
+          BorderBrush="{StaticResource DialogStroke}"
+          BorderThickness="1"
+          ClipToBounds="True">
     <Grid RowDefinitions="Auto,*,Auto">
-      <TextBlock x:Name="TitleTextBlock" Text="DreamLauncher" FontSize="22" FontWeight="Bold" Foreground="White" />
-      <TextBlock x:Name="MessageTextBlock" Grid.Row="1" Margin="0,16,0,0" TextWrapping="Wrap" Foreground="#D6D9EA" />
-      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-        <Button x:Name="CancelButton" Content="取消" MinWidth="82" Click="Cancel_Click" />
-        <Button Content="确定" MinWidth="82" Background="#FF5BAB" Foreground="White" Click="Ok_Click" />
+      <Grid>
+        <Ellipse Width="180" Height="180" Fill="#7D46EF" Opacity="0.16"
+                 HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-110,-90,0" />
+        <TextBlock x:Name="TitleTextBlock"
+                   Text="DreamLauncher"
+                   FontSize="24"
+                   FontWeight="Bold" />
+      </Grid>
+
+      <ScrollViewer Grid.Row="1"
+                    Margin="0,18,0,22"
+                    VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
+        <TextBlock x:Name="MessageTextBlock"
+                   TextWrapping="Wrap"
+                   Foreground="{StaticResource DialogTextMuted}"
+                   FontSize="15"
+                   LineHeight="22" />
+      </ScrollViewer>
+
+      <StackPanel Grid.Row="2"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="12">
+        <Button x:Name="CancelButton" Content="取消" MinWidth="112" Click="Cancel_Click" />
+        <Button Content="确定" Classes="primary" MinWidth="112" Click="Ok_Click" />
       </StackPanel>
     </Grid>
   </Border>

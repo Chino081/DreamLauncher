@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using DreamLauncher.Avalonia.ViewModels;
 using DreamLauncher.Models.Accounts;
@@ -53,5 +54,13 @@ public partial class AccountSwitchWindow : Window
     private void Cancel_Click(object? sender, RoutedEventArgs e)
     {
         Close(false);
+    }
+
+    private void Dialog_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginMoveDrag(e);
+        }
     }
 }

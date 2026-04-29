@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using DreamLauncher.Avalonia.Accounts;
 using DreamLauncher.Core.Accounts;
@@ -42,6 +43,14 @@ public partial class MicrosoftDeviceCodeWindow : Window
     private void Cancel_Click(object? sender, RoutedEventArgs e)
     {
         Close(false);
+    }
+
+    private void Dialog_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginMoveDrag(e);
+        }
     }
 
     private async Task CopyCodeAsync()

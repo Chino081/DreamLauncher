@@ -2,7 +2,85 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DreamLauncher.Avalonia.App"
              RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <SolidColorBrush x:Key="DialogTextPrimary" Color="#F4F7FB" />
+    <SolidColorBrush x:Key="DialogTextMuted" Color="#C8D0E2" />
+    <SolidColorBrush x:Key="DialogPanel" Color="#20243D" />
+    <SolidColorBrush x:Key="DialogPanelAlt" Color="#3A4059" />
+    <SolidColorBrush x:Key="DialogPanelSoft" Color="#555B72" Opacity="0.52" />
+    <SolidColorBrush x:Key="DialogStroke" Color="#5C6683" />
+    <SolidColorBrush x:Key="DialogStrokeSoft" Color="#6D7590" />
+    <SolidColorBrush x:Key="DialogAccent" Color="#FF5BA7" />
+    <SolidColorBrush x:Key="DialogAccentBlue" Color="#8A45FF" />
+
+    <LinearGradientBrush x:Key="DialogShellBrush" StartPoint="0,0" EndPoint="1,1">
+      <GradientStop Color="#1B2638" Offset="0" />
+      <GradientStop Color="#272A46" Offset="0.58" />
+      <GradientStop Color="#321F4B" Offset="1" />
+    </LinearGradientBrush>
+  </Application.Resources>
+
   <Application.Styles>
     <FluentTheme />
+
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="Segoe UI" />
+    </Style>
+
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource DialogTextPrimary}" />
+    </Style>
+
+    <Style Selector="Button">
+      <Setter Property="MinHeight" Value="46" />
+      <Setter Property="Padding" Value="20,0" />
+      <Setter Property="Foreground" Value="{StaticResource DialogTextPrimary}" />
+      <Setter Property="Background" Value="#464C62" />
+      <Setter Property="BorderBrush" Value="{StaticResource DialogStrokeSoft}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button:pointerover">
+      <Setter Property="Opacity" Value="0.9" />
+    </Style>
+
+    <Style Selector="Button:pressed">
+      <Setter Property="Opacity" Value="0.76" />
+    </Style>
+
+    <Style Selector="Button.primary">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{StaticResource DialogAccent}" />
+      <Setter Property="BorderBrush" Value="#FF83C2" />
+    </Style>
+
+    <Style Selector="Button.purple">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{StaticResource DialogAccentBlue}" />
+      <Setter Property="BorderBrush" Value="#B58BFF" />
+    </Style>
+
+    <Style Selector="Button.danger">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="#C2185B" />
+      <Setter Property="BorderBrush" Value="#FF6BAF" />
+    </Style>
+
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
   </Application.Styles>
 </Application>

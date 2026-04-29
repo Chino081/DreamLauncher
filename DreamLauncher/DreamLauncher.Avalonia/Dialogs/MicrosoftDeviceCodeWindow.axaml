@@ -1,31 +1,68 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="DreamLauncher.Avalonia.Dialogs.MicrosoftDeviceCodeWindow"
-        Width="470"
-        Height="330"
+        Width="590"
+        Height="430"
+        MinWidth="590"
+        MinHeight="430"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         SystemDecorations="None"
-        Background="Transparent">
-  <Border Margin="10" Padding="22" CornerRadius="20" Background="#20243D" BorderBrush="#5C6683" BorderThickness="1">
-    <Grid RowDefinitions="Auto,Auto,*,Auto">
-      <TextBlock Text="Microsoft 登录" FontSize="22" FontWeight="Bold" Foreground="White" />
-      <TextBlock Grid.Row="1"
-                 Text="浏览器已打开，请输入下面的代码。代码会自动复制。"
-                 Foreground="#C7CBE0"
-                 TextWrapping="Wrap"
-                 Margin="0,8,0,18" />
-      <Border Grid.Row="2" Background="#343A52" BorderBrush="#59647C" BorderThickness="1" CornerRadius="16" Padding="18">
+        Background="Transparent"
+        TransparencyLevelHint="Transparent">
+  <Border Margin="10"
+          Padding="32"
+          CornerRadius="24"
+          Background="{StaticResource DialogShellBrush}"
+          BorderBrush="{StaticResource DialogStroke}"
+          BorderThickness="1"
+          ClipToBounds="True"
+          PointerPressed="Dialog_PointerPressed">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <Grid>
+        <Ellipse Width="210" Height="210" Fill="#7D46EF" Opacity="0.16"
+                 HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-125,-100,0" />
+        <StackPanel>
+          <TextBlock Text="Microsoft 登录" FontSize="28" FontWeight="Bold" />
+          <TextBlock Text="浏览器已打开，请在网页中输入下面的代码。代码已自动复制。"
+                     Foreground="{StaticResource DialogTextMuted}"
+                     TextWrapping="Wrap"
+                     FontSize="15"
+                     Margin="0,10,0,0" />
+        </StackPanel>
+      </Grid>
+
+      <Border Grid.Row="1"
+              Background="#343A52"
+              BorderBrush="#59647C"
+              BorderThickness="1"
+              CornerRadius="18"
+              Padding="22"
+              Margin="0,24,0,24">
         <StackPanel VerticalAlignment="Center">
-          <TextBlock Text="登录代码" Foreground="#C7CBE0" />
-          <TextBlock x:Name="CodeTextBlock" Text="--------" FontSize="34" FontWeight="Bold" Foreground="White" Margin="0,8,0,0" />
-          <TextBlock Text="完成网页登录后，此窗口会自动关闭。" Foreground="#C7CBE0" FontSize="12" Margin="0,12,0,0" />
+          <TextBlock Text="登录代码"
+                     Foreground="{StaticResource DialogTextMuted}"
+                     FontSize="14" />
+          <TextBlock x:Name="CodeTextBlock"
+                     Text="--------"
+                     FontSize="38"
+                     FontWeight="Bold"
+                     Margin="0,8,0,0"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="完成网页登录后，此窗口会自动关闭。"
+                     Foreground="{StaticResource DialogTextMuted}"
+                     FontSize="13"
+                     Margin="0,14,0,0" />
         </StackPanel>
       </Border>
-      <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,18,0,0">
-        <Button Content="重新打开网页" Click="OpenBrowser_Click" />
-        <Button Content="复制代码" Click="CopyCode_Click" />
-        <Button Content="取消" Background="#C2185B" Foreground="White" Click="Cancel_Click" />
+
+      <StackPanel Grid.Row="2"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="12">
+        <Button Content="重新打开网页" MinWidth="142" Click="OpenBrowser_Click" />
+        <Button Content="复制代码" Classes="primary" MinWidth="122" Click="CopyCode_Click" />
+        <Button Content="取消" Classes="danger" MinWidth="112" Click="Cancel_Click" />
       </StackPanel>
     </Grid>
   </Border>

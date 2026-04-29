@@ -141,12 +141,12 @@ public sealed class ClientManager
             progress?.Report(new LauncherOperationProgress
             {
                 Stage = "install",
-                Message = "正在写入 .minecraft 目录",
+                Message = "正在合并 .minecraft 文件",
                 Progress = null
             });
 
-            SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, finalDirectory);
-            Directory.Move(stagingDirectory, finalDirectory);
+            MergeDirectory(stagingDirectory, finalDirectory, cancellationToken);
+            SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, stagingDirectory);
             await WriteLocalConfigAsync(metadataDirectory, client, cancellationToken);
 
             progress?.Report(new LauncherOperationProgress
@@ -343,6 +343,32 @@ public sealed class ClientManager
         if (File.Exists(path))
         {
             File.Delete(path);
+        }
+    }
+
+    private static void MergeDirectory(
+        string sourceDirectory,
+        string destinationDirectory,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(destinationDirectory);
+
+        foreach (var directory in Directory.EnumerateDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relativePath = Path.GetRelativePath(sourceDirectory, directory);
+            Directory.CreateDirectory(Path.Combine(destinationDirectory, relativePath));
+        }
+
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relativePath = Path.GetRelativePath(sourceDirectory, file);
+            var destinationPath = Path.Combine(destinationDirectory, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+            File.Copy(file, destinationPath, overwrite: true);
         }
     }
 }

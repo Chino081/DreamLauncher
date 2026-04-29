@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using DreamLauncher.Core.Config;
 using DreamLauncher.Core.Java;
 using DreamLauncher.Core.Security;
@@ -124,9 +127,10 @@ public sealed class MinecraftLaunchService
         }
 
         var gameDirectory = GetVersionGameDirectory(versionJsonPath);
-        var nativesDirectory = Path.Combine(minecraftDirectory, "natives", versionId);
+        var nativesDirectory = Path.Combine(minecraftDirectory, "natives", versionId, GetNativeRuntimeId());
         Directory.CreateDirectory(gameDirectory);
         Directory.CreateDirectory(nativesDirectory);
+        ExtractNativeLibraries(minecraftDirectory, root, nativesDirectory, cancellationToken);
 
         var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -369,14 +373,9 @@ public sealed class MinecraftLaunchService
             var action = ReadString(rule, "action");
             var osMatches = true;
 
-            if (rule.TryGetProperty("os", out var os) &&
-                ReadString(os, "name") is { } osName)
+            if (rule.TryGetProperty("os", out var os))
             {
-                osMatches = OperatingSystem.IsWindows()
-                    ? osName.Equals("windows", StringComparison.OrdinalIgnoreCase)
-                    : OperatingSystem.IsMacOS()
-                        ? osName.Equals("osx", StringComparison.OrdinalIgnoreCase)
-                        : osName.Equals("linux", StringComparison.OrdinalIgnoreCase);
+                osMatches = IsCurrentOsMatch(os);
             }
 
             if (!osMatches)
@@ -417,6 +416,263 @@ public sealed class MinecraftLaunchService
         }
 
         return true;
+    }
+
+    private static void ExtractNativeLibraries(
+        string minecraftDirectory,
+        JsonElement root,
+        string nativesDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (!root.TryGetProperty("libraries", out var libraries) || libraries.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        var librariesDirectory = Path.Combine(minecraftDirectory, "libraries");
+        foreach (var library in libraries.EnumerateArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsAllowedByRules(library) ||
+                !TryResolveNativeLibraryPath(librariesDirectory, library, out var nativeLibraryPath))
+            {
+                continue;
+            }
+
+            if (!File.Exists(nativeLibraryPath))
+            {
+                throw new FileNotFoundException("缺少当前系统需要的 Minecraft natives 文件。", nativeLibraryPath);
+            }
+
+            ExtractNativeArchive(nativeLibraryPath, nativesDirectory, ReadNativeExtractExcludes(library), cancellationToken);
+        }
+    }
+
+    private static bool TryResolveNativeLibraryPath(
+        string librariesDirectory,
+        JsonElement library,
+        out string nativeLibraryPath)
+    {
+        nativeLibraryPath = "";
+
+        if (!library.TryGetProperty("natives", out var natives) ||
+            natives.ValueKind != JsonValueKind.Object ||
+            !natives.TryGetProperty(GetMinecraftOsName(), out var classifierTemplate) ||
+            classifierTemplate.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var classifier = classifierTemplate.GetString();
+        if (string.IsNullOrWhiteSpace(classifier))
+        {
+            return false;
+        }
+
+        foreach (var candidate in BuildNativeClassifierCandidates(classifier))
+        {
+            var path = ReadNestedString(library, "downloads", "classifiers", candidate, "path")
+                ?? BuildLibraryPathFromName(library, candidate);
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            nativeLibraryPath = Path.Combine(librariesDirectory, path.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(nativeLibraryPath))
+            {
+                return true;
+            }
+        }
+
+        var fallbackClassifier = classifier.Replace("${arch}", Environment.Is64BitOperatingSystem ? "64" : "32", StringComparison.Ordinal);
+        var fallbackPath = ReadNestedString(library, "downloads", "classifiers", fallbackClassifier, "path")
+            ?? BuildLibraryPathFromName(library, fallbackClassifier);
+
+        if (string.IsNullOrWhiteSpace(fallbackPath))
+        {
+            return false;
+        }
+
+        nativeLibraryPath = Path.Combine(librariesDirectory, fallbackPath.Replace('/', Path.DirectorySeparatorChar));
+        return true;
+    }
+
+    private static IEnumerable<string> BuildNativeClassifierCandidates(string classifierTemplate)
+    {
+        var classifier = classifierTemplate.Replace("${arch}", Environment.Is64BitOperatingSystem ? "64" : "32", StringComparison.Ordinal);
+        var architecture = RuntimeInformation.ProcessArchitecture;
+
+        if (OperatingSystem.IsMacOS() && architecture == Architecture.Arm64)
+        {
+            yield return classifier.Replace("natives-macos", "natives-macos-arm64", StringComparison.OrdinalIgnoreCase);
+            yield return classifier.Replace("natives-osx", "natives-osx-arm64", StringComparison.OrdinalIgnoreCase);
+        }
+        else if (OperatingSystem.IsLinux() && architecture == Architecture.Arm64)
+        {
+            yield return classifier.Replace("natives-linux", "natives-linux-arm64", StringComparison.OrdinalIgnoreCase);
+            yield return classifier.Replace("natives-linux", "natives-linux-aarch64", StringComparison.OrdinalIgnoreCase);
+        }
+        else if (OperatingSystem.IsWindows() && architecture == Architecture.Arm64)
+        {
+            yield return classifier.Replace("natives-windows", "natives-windows-arm64", StringComparison.OrdinalIgnoreCase);
+        }
+
+        yield return classifier;
+    }
+
+    private static string? BuildLibraryPathFromName(JsonElement library, string classifier)
+    {
+        var basePath = BuildLibraryPathFromName(library);
+        if (basePath is null)
+        {
+            return null;
+        }
+
+        var directory = Path.GetDirectoryName(basePath)?.Replace('\\', '/');
+        var fileName = Path.GetFileNameWithoutExtension(basePath);
+        return string.IsNullOrWhiteSpace(directory)
+            ? $"{fileName}-{classifier}.jar"
+            : $"{directory}/{fileName}-{classifier}.jar";
+    }
+
+    private static IReadOnlyList<string> ReadNativeExtractExcludes(JsonElement library)
+    {
+        if (!library.TryGetProperty("extract", out var extract) ||
+            !extract.TryGetProperty("exclude", out var excludes) ||
+            excludes.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return excludes
+            .EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()!)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToArray();
+    }
+
+    private static void ExtractNativeArchive(
+        string nativeLibraryPath,
+        string nativesDirectory,
+        IReadOnlyList<string> excludes,
+        CancellationToken cancellationToken)
+    {
+        var destinationRoot = Path.GetFullPath(nativesDirectory);
+        Directory.CreateDirectory(destinationRoot);
+
+        using var archive = ZipFile.OpenRead(nativeLibraryPath);
+        foreach (var entry in archive.Entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (entry.FullName.EndsWith("/", StringComparison.Ordinal) ||
+                entry.FullName.EndsWith("\\", StringComparison.Ordinal) ||
+                IsNativeEntryExcluded(entry.FullName, excludes))
+            {
+                continue;
+            }
+
+            var targetPath = GetSafeNativeEntryPath(destinationRoot, entry.FullName);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            entry.ExtractToFile(targetPath, overwrite: true);
+        }
+    }
+
+    private static bool IsNativeEntryExcluded(string entryName, IReadOnlyList<string> excludes)
+    {
+        var normalizedEntry = entryName.Replace('\\', '/').TrimStart('/');
+        return excludes.Any(exclude =>
+        {
+            var normalizedExclude = exclude.Replace('\\', '/').TrimStart('/');
+            return normalizedEntry.StartsWith(normalizedExclude, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    private static string GetSafeNativeEntryPath(string destinationRoot, string entryName)
+    {
+        var normalizedEntry = entryName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+        var targetPath = Path.GetFullPath(Path.Combine(destinationRoot, normalizedEntry));
+
+        var rootWithSeparator = destinationRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? destinationRoot
+            : destinationRoot + Path.DirectorySeparatorChar;
+
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!targetPath.StartsWith(rootWithSeparator, comparison))
+        {
+            throw new InvalidDataException("natives 压缩包包含不安全的路径，已停止解压。");
+        }
+
+        return targetPath;
+    }
+
+    private static bool IsCurrentOsMatch(JsonElement os)
+    {
+        if (ReadString(os, "name") is { } osName &&
+            !osName.Equals(GetMinecraftOsName(), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (ReadString(os, "arch") is { } architecture &&
+            !IsCurrentArchitectureMatch(architecture))
+        {
+            return false;
+        }
+
+        if (ReadString(os, "version") is { } versionPattern &&
+            !Regex.IsMatch(Environment.OSVersion.VersionString, versionPattern, RegexOptions.IgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsCurrentArchitectureMatch(string architecture)
+    {
+        return architecture.ToLowerInvariant() switch
+        {
+            "x86" => RuntimeInformation.ProcessArchitecture == Architecture.X86,
+            "x86_64" or "amd64" => RuntimeInformation.ProcessArchitecture == Architecture.X64,
+            "arm64" or "aarch64" => RuntimeInformation.ProcessArchitecture == Architecture.Arm64,
+            "arm" => RuntimeInformation.ProcessArchitecture == Architecture.Arm,
+            _ => true
+        };
+    }
+
+    private static string GetMinecraftOsName()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return "windows";
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return "osx";
+        }
+
+        return "linux";
+    }
+
+    private static string GetNativeRuntimeId()
+    {
+        var osName = GetMinecraftOsName();
+        var architecture = RuntimeInformation.ProcessArchitecture switch
+        {
+            Architecture.X64 => "x64",
+            Architecture.X86 => "x86",
+            Architecture.Arm64 => "arm64",
+            Architecture.Arm => "arm",
+            _ => RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()
+        };
+
+        return $"{osName}-{architecture}";
     }
 
     private static void AddVersionJvmArguments(

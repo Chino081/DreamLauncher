@@ -1,0 +1,148 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DreamLauncher.Avalonia.MainWindow"
+        Title="Dreamtc Tamrac Launcher"
+        Width="1180"
+        Height="760"
+        MinWidth="980"
+        MinHeight="620"
+        Background="#151D2F">
+  <Grid RowDefinitions="76,*">
+    <Border Grid.Row="0" Background="#253049">
+      <Grid ColumnDefinitions="Auto,*" Margin="28,0">
+        <Border Width="42"
+                Height="42"
+                CornerRadius="21"
+                Background="#FF5BAB"
+                VerticalAlignment="Center">
+          <TextBlock Text="梦"
+                     FontSize="18"
+                     FontWeight="Bold"
+                     Foreground="White"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center" />
+        </Border>
+
+        <StackPanel Grid.Column="1"
+                    Margin="14,0,0,0"
+                    VerticalAlignment="Center"
+                    Spacing="2">
+          <TextBlock Text="Dreamtc Tamrac Launcher"
+                     Foreground="White"
+                     FontSize="21"
+                     FontWeight="Bold" />
+          <TextBlock Text="甜酷二次元风 · Minecraft Launcher"
+                     Foreground="#D8D9FF"
+                     FontSize="12" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" Margin="26,20,26,26" ColumnDefinitions="280,*" ColumnSpacing="18">
+      <Border CornerRadius="18"
+              Background="#303A57"
+              BorderBrush="#485273"
+              BorderThickness="1"
+              Padding="24">
+        <StackPanel Spacing="22">
+          <Border Width="82"
+                  Height="82"
+                  CornerRadius="24"
+                  Background="#8038F2"
+                  HorizontalAlignment="Center">
+            <TextBlock Text="梦"
+                       FontSize="36"
+                       FontWeight="Bold"
+                       Foreground="White"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Spacing="5" HorizontalAlignment="Center">
+            <TextBlock Text="跨平台预览"
+                       Foreground="White"
+                       FontSize="18"
+                       FontWeight="Bold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="macOS / Linux UI"
+                       Foreground="#BCC4DA"
+                       HorizontalAlignment="Center" />
+          </StackPanel>
+          <Border Height="1" Background="#56607C" />
+          <TextBlock Text="Avalonia 项目已接入 Core 和 Models，后续可以把 WPF 页面逐步迁移到这套跨平台界面。"
+                     Foreground="#D6D9EA"
+                     TextWrapping="Wrap"
+                     LineHeight="20" />
+        </StackPanel>
+      </Border>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="18">
+        <Border CornerRadius="18"
+                Background="#303A57"
+                BorderBrush="#485273"
+                BorderThickness="1"
+                Padding="22">
+          <StackPanel Spacing="6">
+            <TextBlock Text="启动器"
+                       Foreground="White"
+                       FontSize="26"
+                       FontWeight="Bold" />
+            <TextBlock Text="当前是 Avalonia 跨平台壳，核心下载、Java 管理和 Minecraft 启动逻辑会复用 Core 层。"
+                       Foreground="#D6D9EA"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,300" ColumnSpacing="18">
+          <Border CornerRadius="18"
+                  Background="#303A57"
+                  BorderBrush="#485273"
+                  BorderThickness="1"
+                  Padding="22">
+            <StackPanel Spacing="18">
+              <TextBlock Text="客户端列表"
+                         Foreground="White"
+                         FontSize="22"
+                         FontWeight="Bold" />
+              <Border CornerRadius="12"
+                      Background="#444D67"
+                      BorderBrush="#67708D"
+                      BorderThickness="1"
+                      Padding="18">
+                <StackPanel Spacing="5">
+                  <TextBlock Text="等待接入跨平台 ViewModel"
+                             Foreground="White"
+                             FontSize="16"
+                             FontWeight="Bold" />
+                  <TextBlock Text="Windows 版现有功能保持不变，Avalonia 项目先保证 macOS/Linux 可编译运行。"
+                             Foreground="#D6D9EA"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Border>
+
+          <Border Grid.Column="1"
+                  CornerRadius="18"
+                  Background="#303A57"
+                  BorderBrush="#8640FF"
+                  BorderThickness="1"
+                  Padding="22">
+            <StackPanel Spacing="16">
+              <TextBlock Text="平台状态"
+                         Foreground="White"
+                         FontSize="22"
+                         FontWeight="Bold" />
+              <TextBlock Text="natives 会在启动前按当前系统解压到独立目录，避免混用 Windows、macOS、Linux 原生库。"
+                         Foreground="#D6D9EA"
+                         TextWrapping="Wrap"
+                         LineHeight="20" />
+              <Button Content="准备接入"
+                      HorizontalAlignment="Stretch"
+                      IsEnabled="False" />
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>

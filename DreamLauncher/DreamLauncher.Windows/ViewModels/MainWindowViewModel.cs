@@ -175,9 +175,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
             SelectedClient = Clients.FirstOrDefault(client => client.Id == config.DefaultClientId) ?? Clients.FirstOrDefault();
             await LoadAnnouncementsAsync(config, manifest, cancellationToken);
-            StatusMessage = string.IsNullOrWhiteSpace(config.ClientsManifestUrl)
-                ? "请先在设置中填写 HTTPS clients.json 地址"
-                : "启动器已就绪";
+            StatusMessage = "启动器已就绪";
         });
     }
 
@@ -272,7 +270,7 @@ public sealed class MainWindowViewModel : ObservableObject
         var manifestUrl = config.JavaRuntimesManifestUrl;
         if (string.IsNullOrWhiteSpace(manifestUrl))
         {
-            throw new InvalidOperationException($"缺少 Java {requiredVersion} 下载配置，请在设置中填写 java-runtimes.json。");
+            throw new InvalidOperationException($"缺少 Java {requiredVersion} 下载配置，请刷新客户端列表后重试。");
         }
 
         StatusMessage = $"正在下载 Java {requiredVersion}";
@@ -396,7 +394,7 @@ public sealed class MainWindowViewModel : ObservableObject
             Announcements.Add(new AnnouncementItem
             {
                 Title = "公告未配置",
-                Content = "填写 announcement.json 后，这里会显示服务器公告。",
+                Content = "远程客户端配置未提供公告地址。",
                 Date = DateOnly.FromDateTime(DateTime.Today)
             });
             return;
@@ -534,8 +532,8 @@ public sealed class MainWindowViewModel : ObservableObject
             Definition = new ClientDefinition
             {
                 Id = "configure-source",
-                Name = "配置客户端源",
-                Description = "在设置中填写 HTTPS clients.json 地址后刷新客户端列表。",
+                Name = "暂无客户端",
+                Description = "固定客户端源暂时没有返回可用客户端，请检查网络后刷新。",
                 Version = "0.0.0",
                 MinecraftVersion = "1.20.1",
                 Loader = "forge",

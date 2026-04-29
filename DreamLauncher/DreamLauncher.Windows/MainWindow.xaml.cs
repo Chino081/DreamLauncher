@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.IO;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -24,13 +24,14 @@ namespace DreamLauncher.Windows;
 
 public partial class MainWindow : Window
 {
-    private const string DefaultMicrosoftClientId = "00000000402b5328";
+    private static readonly int[] MemoryPresets = [2048, 4096, 6144, 8192, 12288, 16384];
     private readonly LauncherPaths _paths;
     private readonly LauncherConfigStore _configStore;
     private readonly AccountManager _accountManager;
     private readonly JavaRuntimeManager _javaRuntimeManager;
     private readonly MainWindowViewModel _viewModel;
     private bool _isUpdatingJavaRuntimeOptions;
+    private bool _isUpdatingMemoryOptions;
 
     public MainWindow()
     {
@@ -72,6 +73,7 @@ public partial class MainWindow : Window
                 SettingsPage?.Visibility == Visibility.Visible)
             {
                 await RefreshJavaRuntimeOptionsAsync();
+                await RefreshMemoryOptionsAsync();
             }
         };
         Loaded += MainWindow_Loaded;
@@ -117,11 +119,7 @@ public partial class MainWindow : Window
         try
         {
             var config = await _configStore.LoadAsync();
-            config.ClientsManifestUrl = EmptyToNull(MainClientsManifestUrlTextBox.Text);
-            config.JavaRuntimesManifestUrl = EmptyToNull(MainJavaRuntimesUrlTextBox.Text);
-            config.AnnouncementUrl = EmptyToNull(MainAnnouncementUrlTextBox.Text);
-            config.MicrosoftClientId = EmptyToNull(MainMicrosoftClientIdTextBox.Text);
-            config.AuthlibInjectorJarPath = EmptyToNull(MainAuthlibInjectorJarPathTextBox.Text);
+            ApplySelectedMemorySetting(config);
 
             if (int.TryParse(MainMaxRetryCountTextBox.Text, out var retryCount))
             {
@@ -134,6 +132,7 @@ public partial class MainWindow : Window
 
             await _configStore.SaveAsync(config);
             await _viewModel.InitializeAsync();
+            await LoadInlineSettingsAsync();
             LauncherMessageBox.Show(this, "设置已保存。", "DreamLauncher", LauncherMessageKind.Success);
         }
         catch (Exception ex)
@@ -230,14 +229,10 @@ public partial class MainWindow : Window
     private async Task LoadInlineSettingsAsync()
     {
         var config = await _configStore.LoadAsync();
-        MainClientsManifestUrlTextBox.Text = config.ClientsManifestUrl ?? "";
-        MainJavaRuntimesUrlTextBox.Text = config.JavaRuntimesManifestUrl ?? "";
-        MainAnnouncementUrlTextBox.Text = config.AnnouncementUrl ?? "";
-        MainMicrosoftClientIdTextBox.Text = config.MicrosoftClientId ?? DefaultMicrosoftClientId;
-        MainAuthlibInjectorJarPathTextBox.Text = config.AuthlibInjectorJarPath ?? "";
         MainMaxRetryCountTextBox.Text = config.Download.MaxRetryCount.ToString();
         MainSpeedLimitTextBox.Text = config.Download.SpeedLimitKbPerSecond?.ToString() ?? "";
         await RefreshJavaRuntimeOptionsAsync(config);
+        await RefreshMemoryOptionsAsync(config);
     }
 
     private async void AutoDetectJava_Click(object sender, RoutedEventArgs e)
@@ -374,6 +369,123 @@ public partial class MainWindow : Window
         JavaRuntimeStatusTextBlock.Text = selectedClient is null
             ? "当前未选择客户端，自动选择暂按 Java 17 检测。"
             : $"当前客户端：{clientName}，需要 Java {requiredVersion}。自动选择会优先使用启动器私有 Java，再尝试系统 Java。";
+    }
+
+    private async Task RefreshMemoryOptionsAsync(LauncherConfig? config = null)
+    {
+        config ??= await _configStore.LoadAsync();
+        var selectedClient = _viewModel.SelectedClient;
+        var defaultMemory = Math.Max(1024, selectedClient?.Installation.Definition.DefaultMemoryMb ?? 4096);
+        var savedMemory = selectedClient is null
+            ? null
+            : config.ClientSettings.GetValueOrDefault(selectedClient.Id)?.MemoryMb;
+
+        var options = new List<MemoryPresetOption>
+        {
+            new()
+            {
+                DisplayName = $"自动选择（当前推荐：{FormatMemory(defaultMemory)}）",
+                IsAutomatic = true
+            }
+        };
+
+        options.AddRange(MemoryPresets.Select(memory => new MemoryPresetOption
+        {
+            DisplayName = FormatMemory(memory),
+            MemoryMb = memory
+        }));
+        options.Add(new MemoryPresetOption
+        {
+            DisplayName = "自定义",
+            IsCustom = true
+        });
+
+        var selectedOption = savedMemory.HasValue
+            ? options.FirstOrDefault(item => item.MemoryMb == savedMemory.Value) ??
+              options.First(item => item.IsCustom)
+            : options.First();
+
+        _isUpdatingMemoryOptions = true;
+        try
+        {
+            MemoryPresetComboBox.ItemsSource = options;
+            MemoryPresetComboBox.SelectedItem = selectedOption;
+            CustomMemoryTextBox.Text = savedMemory?.ToString(CultureInfo.InvariantCulture) ??
+                                       defaultMemory.ToString(CultureInfo.InvariantCulture);
+        }
+        finally
+        {
+            _isUpdatingMemoryOptions = false;
+        }
+
+        UpdateCustomMemoryInputState();
+        MemoryStatusTextBlock.Text = selectedClient is null
+            ? "当前未选择客户端。"
+            : savedMemory.HasValue
+                ? $"当前客户端：{selectedClient.Name}，最大内存 {FormatMemory(savedMemory.Value)}。"
+                : $"当前客户端：{selectedClient.Name}，自动使用 {FormatMemory(defaultMemory)}。";
+    }
+
+    private void MemoryPresetComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingMemoryOptions)
+        {
+            return;
+        }
+
+        UpdateCustomMemoryInputState();
+    }
+
+    private void UpdateCustomMemoryInputState()
+    {
+        var isCustom = MemoryPresetComboBox.SelectedItem is MemoryPresetOption { IsCustom: true };
+        CustomMemoryTextBox.IsEnabled = isCustom;
+        CustomMemoryTextBox.Opacity = isCustom ? 1 : 0.55;
+    }
+
+    private void ApplySelectedMemorySetting(LauncherConfig config)
+    {
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            return;
+        }
+
+        var memoryMb = ReadSelectedMemoryMb();
+        if (!config.ClientSettings.TryGetValue(selectedClient.Id, out var settings))
+        {
+            settings = new ClientUserSettings();
+            config.ClientSettings[selectedClient.Id] = settings;
+        }
+
+        settings.MemoryMb = memoryMb;
+        selectedClient.Installation.MemoryMb = memoryMb ?? selectedClient.Installation.Definition.DefaultMemoryMb;
+        selectedClient.Update(selectedClient.Installation);
+    }
+
+    private int? ReadSelectedMemoryMb()
+    {
+        if (MemoryPresetComboBox.SelectedItem is not MemoryPresetOption option || option.IsAutomatic)
+        {
+            return null;
+        }
+
+        if (!option.IsCustom)
+        {
+            return option.MemoryMb;
+        }
+
+        if (!int.TryParse(CustomMemoryTextBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var memoryMb))
+        {
+            throw new InvalidOperationException("最大内存需要填写数字，单位是 MB。");
+        }
+
+        if (memoryMb is < 1024 or > 65536)
+        {
+            throw new InvalidOperationException("最大内存建议填写 1024 到 65536 MB。");
+        }
+
+        return memoryMb;
     }
 
     private async Task<IReadOnlyList<JavaRuntimeOption>> DiscoverJavaRuntimeOptionsAsync(int requiredVersion)
@@ -616,11 +728,6 @@ public partial class MainWindow : Window
             loginWindow.Password);
     }
 
-    private static string? EmptyToNull(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
     private static string GetJavaDisplayName(string path, int version)
     {
         var normalized = path.Replace('\\', '/');
@@ -648,6 +755,13 @@ public partial class MainWindow : Window
         return version <= 0 ? "未知版本" : $"Java {version}";
     }
 
+    private static string FormatMemory(int memoryMb)
+    {
+        return memoryMb >= 1024 && memoryMb % 1024 == 0
+            ? $"{memoryMb / 1024} GB"
+            : $"{memoryMb} MB";
+    }
+
     private static string FormatCompatibilitySuffix(bool isCompatible, int requiredVersion)
     {
         return isCompatible ? "" : $"（不兼容，需 Java {requiredVersion}+）";
@@ -664,5 +778,16 @@ public partial class MainWindow : Window
         public bool IsAutomatic { get; init; }
 
         public bool IsCompatible { get; init; } = true;
+    }
+
+    private sealed class MemoryPresetOption
+    {
+        public required string DisplayName { get; init; }
+
+        public int? MemoryMb { get; init; }
+
+        public bool IsAutomatic { get; init; }
+
+        public bool IsCustom { get; init; }
     }
 }

@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Dreamtc Tamrac Launcher"
+        Icon="Assets/favicon.ico"
         Height="760"
         Width="1180"
         MinHeight="700"
@@ -83,6 +84,23 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="DownloadClientItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          ContentStringFormat="{TemplateBinding ContentStringFormat}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border CornerRadius="22"
@@ -148,14 +166,19 @@
                         <Grid Grid.Row="1">
                             <Grid x:Name="LaunchPage">
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="88" />
+                                    <RowDefinition Height="96" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
                                 <Border Style="{StaticResource GlassCard}" Padding="18,14" Margin="0,0,0,14" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="开始游戏" FontSize="24" FontWeight="Bold" />
-                                        <TextBlock Text="在这里选择版本、查看版本信息，然后直接启动游戏。" FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,5,0,0" />
+                                        <TextBlock Text="开始游戏" FontSize="24" FontWeight="Bold" LineHeight="30" />
+                                        <TextBlock Text="在这里选择版本、查看版本信息，然后直接启动游戏。"
+                                                   FontSize="12"
+                                                   LineHeight="18"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource TextMuted}"
+                                                   Margin="0,4,0,0" />
                                     </StackPanel>
                                 </Border>
 
@@ -200,40 +223,43 @@
                                         </Grid>
                                     </Border>
 
-                                    <Grid Grid.Column="1" Margin="14,0,0,0">
+                                    <Grid Grid.Column="1" Margin="14,0,1,0">
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="220" />
+                                            <RowDefinition Height="222" />
                                             <RowDefinition Height="*" />
                                         </Grid.RowDefinitions>
 
-                                        <Border Style="{StaticResource GlassCard}" BorderBrush="{StaticResource PurpleLine}">
+                                        <Border Style="{StaticResource GlassCard}"
+                                                BorderBrush="{StaticResource PurpleLine}"
+                                                Margin="0,1,0,1"
+                                                Padding="17">
                                             <Grid>
                                                 <Grid.RowDefinitions>
                                                     <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="*" />
+                                                    <RowDefinition Height="112" />
                                                     <RowDefinition Height="Auto" />
                                                 </Grid.RowDefinitions>
 
-                                                <TextBlock Text="账号管理" FontSize="18" FontWeight="Bold" />
-                                                <Border Grid.Row="1" Background="#2B173F" BorderBrush="#7D35E8" BorderThickness="1" CornerRadius="18" Padding="14" Margin="0,14,0,14">
+                                                <TextBlock Text="账号管理" FontSize="18" FontWeight="Bold" LineHeight="24" />
+                                                <Border Grid.Row="1" Background="#2B173F" BorderBrush="#7D35E8" BorderThickness="1" CornerRadius="18" Padding="10" Margin="0,12,0,8">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="64" />
+                                                            <ColumnDefinition Width="58" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
-                                                        <Border Width="64" Height="64" Background="{StaticResource Accent}" CornerRadius="18">
-                                                            <TextBlock Text="咕" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        <Border Width="58" Height="58" Background="{StaticResource Accent}" CornerRadius="17" VerticalAlignment="Center">
+                                                            <TextBlock Text="咕" FontSize="25" LineHeight="31" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                         </Border>
                                                         <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding CurrentAccountName}" FontSize="18" FontWeight="Bold" />
-                                                            <TextBlock Text="{Binding CurrentAccountStatusText}" FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
-                                                            <TextBlock Text="状态：在线" FontSize="12" Foreground="{StaticResource Accent}" Margin="0,4,0,0" />
+                                                            <TextBlock Text="{Binding CurrentAccountName}" FontSize="17" FontWeight="Bold" LineHeight="22" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding CurrentAccountStatusText}" FontSize="12" LineHeight="17" Foreground="{StaticResource TextMuted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="状态：在线" FontSize="12" LineHeight="17" Foreground="{StaticResource Accent}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
                                                         </StackPanel>
                                                     </Grid>
                                                 </Border>
-                                                <WrapPanel Grid.Row="2">
-                                                    <Button Content="登录账号" Style="{StaticResource PrimaryButton}" Click="LoginAccountButton_Click" Margin="0,0,10,8" />
-                                                    <Button Content="退出当前" Style="{StaticResource SecondaryButton}" IsEnabled="False" Margin="0,0,0,8" />
+                                                <WrapPanel Grid.Row="2" VerticalAlignment="Bottom">
+                                                    <Button Content="登录账号" Style="{StaticResource PrimaryButton}" Click="LoginAccountButton_Click" Margin="0,0,10,0" />
+                                                    <Button Content="退出当前" Style="{StaticResource SecondaryButton}" IsEnabled="False" Margin="0" />
                                                 </WrapPanel>
                                             </Grid>
                                         </Border>
@@ -251,14 +277,19 @@
 
                             <Grid x:Name="DownloadPage" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="88" />
+                                    <RowDefinition Height="96" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
                                 <Border Style="{StaticResource GlassCard}" Padding="18,14" Margin="0,0,0,14" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="下载中心" FontSize="24" FontWeight="Bold" />
-                                        <TextBlock Text="展示可用客户端列表和当前下载进度。" FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,5,0,0" />
+                                        <TextBlock Text="下载中心" FontSize="24" FontWeight="Bold" LineHeight="30" />
+                                        <TextBlock Text="展示可用客户端列表和当前下载进度。"
+                                                   FontSize="12"
+                                                   LineHeight="18"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource TextMuted}"
+                                                   Margin="0,4,0,0" />
                                     </StackPanel>
                                 </Border>
 
@@ -280,14 +311,16 @@
                                                          SelectedItem="{Binding SelectedClient, Mode=TwoWay}"
                                                          Background="Transparent"
                                                          BorderThickness="0"
-                                                         Foreground="{StaticResource TextPrimary}">
+                                                         Foreground="{StaticResource TextPrimary}"
+                                                         ItemContainerStyle="{StaticResource DownloadClientItemStyle}"
+                                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                                     <ListBox.ItemTemplate>
                                                         <DataTemplate>
-                                                            <Border Background="#4A5065" BorderBrush="#626A80" BorderThickness="1" CornerRadius="14" Padding="14" Margin="0,0,0,10">
+                                                            <Border Background="#4A5065" BorderBrush="#626A80" BorderThickness="1" CornerRadius="14" Padding="14">
                                                                 <Grid>
                                                                     <Grid.ColumnDefinitions>
                                                                         <ColumnDefinition Width="*" />
-                                                                        <ColumnDefinition Width="120" />
+                                                                        <ColumnDefinition Width="132" />
                                                                     </Grid.ColumnDefinitions>
                                                                     <StackPanel>
                                                                         <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="Bold" />
@@ -436,64 +469,52 @@
                                                     </Grid>
                                                 </Border>
 
-                                                <TextBlock Text="启动器" Foreground="{StaticResource Accent}" FontWeight="Bold" />
+                                                <TextBlock Text="最大内存" Foreground="#00C28A" FontWeight="Bold" />
                                                 <Border Background="#3A4058" CornerRadius="14" Padding="16" Margin="0,10,0,22">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="140" />
                                                             <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="128" />
+                                                            <ColumnDefinition Width="42" />
                                                         </Grid.ColumnDefinitions>
                                                         <Grid.RowDefinitions>
                                                             <RowDefinition Height="Auto" />
                                                             <RowDefinition Height="12" />
                                                             <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="8" />
+                                                            <RowDefinition Height="Auto" />
                                                         </Grid.RowDefinitions>
-                                                        <TextBlock Text="启动器名称" VerticalAlignment="Center" />
-                                                        <TextBox Grid.Column="1" Style="{StaticResource LauncherTextBox}" Text="Dreamtc Launcher" />
-                                                        <TextBlock Grid.Row="2" Text="启动器描述" VerticalAlignment="Center" />
-                                                        <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource LauncherTextBox}" Text="甜酷二次元风" />
-                                                    </Grid>
-                                                </Border>
 
-                                                <TextBlock Text="远程配置" Foreground="#00C28A" FontWeight="Bold" />
-                                                <Border Background="#3A4058" CornerRadius="14" Padding="16" Margin="0,10,0,22">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="140" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="12" />
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="12" />
-                                                            <RowDefinition Height="Auto" />
-                                                        </Grid.RowDefinitions>
-                                                        <TextBlock Text="clients.json" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="MainClientsManifestUrlTextBox" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
-                                                        <TextBlock Grid.Row="2" Text="java-runtimes.json" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="MainJavaRuntimesUrlTextBox" Grid.Row="2" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
-                                                        <TextBlock Grid.Row="4" Text="announcement.json" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="MainAnnouncementUrlTextBox" Grid.Row="4" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
-                                                    </Grid>
-                                                </Border>
+                                                        <TextBlock Grid.ColumnSpan="3"
+                                                                   Text="默认自动使用当前客户端建议内存，也可以选择常用档位或手动填写。"
+                                                                   Foreground="{StaticResource TextMuted}"
+                                                                   TextWrapping="Wrap" />
 
-                                                <TextBlock Text="账号与认证" Foreground="{StaticResource AccentBlue}" FontWeight="Bold" />
-                                                <Border Background="#3A4058" CornerRadius="14" Padding="16" Margin="0,10,0,22">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="140" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="12" />
-                                                            <RowDefinition Height="Auto" />
-                                                        </Grid.RowDefinitions>
-                                                        <TextBlock Text="Microsoft Client ID" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="MainMicrosoftClientIdTextBox" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
-                                                        <TextBlock Grid.Row="2" Text="authlib-injector" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="MainAuthlibInjectorJarPathTextBox" Grid.Row="2" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
+                                                        <ComboBox x:Name="MemoryPresetComboBox"
+                                                                  Grid.Row="2"
+                                                                  DisplayMemberPath="DisplayName"
+                                                                  MinHeight="36"
+                                                                  Padding="10,6"
+                                                                  Foreground="{StaticResource TextPrimary}"
+                                                                  Background="{StaticResource PanelBackgroundAlt}"
+                                                                  BorderBrush="{StaticResource StrokeSoft}"
+                                                                  SelectionChanged="MemoryPresetComboBox_SelectionChanged" />
+                                                        <TextBox x:Name="CustomMemoryTextBox"
+                                                                 Grid.Row="2"
+                                                                 Grid.Column="1"
+                                                                 Style="{StaticResource LauncherTextBox}"
+                                                                 Margin="12,0,0,0" />
+                                                        <TextBlock Grid.Row="2"
+                                                                   Grid.Column="2"
+                                                                   Text="MB"
+                                                                   Foreground="{StaticResource TextMuted}"
+                                                                   VerticalAlignment="Center"
+                                                                   HorizontalAlignment="Right" />
+                                                        <TextBlock x:Name="MemoryStatusTextBlock"
+                                                                   Grid.Row="4"
+                                                                   Grid.ColumnSpan="3"
+                                                                   Foreground="{StaticResource TextMuted}"
+                                                                   TextWrapping="Wrap" />
                                                     </Grid>
                                                 </Border>
 

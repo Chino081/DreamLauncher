@@ -161,7 +161,17 @@ public sealed class MinecraftLaunchService
             "-Dminecraft.launcher.version=0.1.0"
         };
 
-        AddThirdPartyAuthArguments(account, authlibInjectorJarPath, arguments);
+        var fallbackAuthlibInjectorJarPath = Path.Combine(_paths.RuntimePath, "authlib-injector.jar");
+        var resolvedAuthlibInjectorJarPath = string.IsNullOrWhiteSpace(authlibInjectorJarPath) &&
+                                             File.Exists(fallbackAuthlibInjectorJarPath)
+            ? fallbackAuthlibInjectorJarPath
+            : authlibInjectorJarPath;
+
+        AddThirdPartyAuthArguments(
+            account,
+            resolvedAuthlibInjectorJarPath,
+            fallbackAuthlibInjectorJarPath,
+            arguments);
         arguments.AddRange(SplitCommandLine(client.Definition.JvmArgs).Select(item => ReplaceVariables(item, variables)));
         AddVersionJvmArguments(root, variables, arguments);
 
@@ -537,6 +547,7 @@ public sealed class MinecraftLaunchService
     private static void AddThirdPartyAuthArguments(
         AccountMetadata account,
         string? authlibInjectorJarPath,
+        string fallbackAuthlibInjectorJarPath,
         ICollection<string> arguments)
     {
         if (account.Type != AccountType.ThirdParty)
@@ -551,7 +562,7 @@ public sealed class MinecraftLaunchService
 
         if (string.IsNullOrWhiteSpace(authlibInjectorJarPath))
         {
-            throw new InvalidOperationException("请先在设置中填写 authlib-injector.jar 路径。");
+            throw new InvalidOperationException($"缺少 authlib-injector.jar，请把文件放到：{fallbackAuthlibInjectorJarPath}");
         }
 
         var jarPath = Environment.ExpandEnvironmentVariables(authlibInjectorJarPath.Trim('"', ' '));

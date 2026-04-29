@@ -11,6 +11,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\favicon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Assets\favicon.ico" />
+    <Resource Include="Assets\favicon.ico" />
+  </ItemGroup>
 
 </Project>

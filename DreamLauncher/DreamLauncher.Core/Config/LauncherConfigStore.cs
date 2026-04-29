@@ -6,7 +6,9 @@ namespace DreamLauncher.Core.Config;
 
 public sealed class LauncherConfigStore
 {
-    private const string LocalCdnRoot = @"F:\Chino\DreamtcTamracLauncherNew\local-cdn";
+    public const string FixedClientsManifestUrl =
+        "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/clients.json";
+
     private readonly LauncherPaths _paths;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -25,7 +27,7 @@ public sealed class LauncherConfigStore
             if (!File.Exists(_paths.ConfigPath))
             {
                 var created = new LauncherConfig();
-                ApplyLocalCdnDefaults(created);
+                ApplyFixedSources(created);
                 await SaveCoreAsync(created, cancellationToken);
                 return created;
             }
@@ -41,7 +43,7 @@ public sealed class LauncherConfigStore
                         cancellationToken) ?? new LauncherConfig();
                 }
 
-                if (ApplyLocalCdnDefaults(config))
+                if (ApplyFixedSources(config))
                 {
                     await SaveCoreAsync(config, cancellationToken);
                 }
@@ -54,7 +56,7 @@ public sealed class LauncherConfigStore
                 File.Copy(_paths.ConfigPath, backupPath, overwrite: false);
 
                 var rebuilt = new LauncherConfig();
-                ApplyLocalCdnDefaults(rebuilt);
+                ApplyFixedSources(rebuilt);
                 await SaveCoreAsync(rebuilt, cancellationToken);
                 return rebuilt;
             }
@@ -71,7 +73,7 @@ public sealed class LauncherConfigStore
         try
         {
             _paths.EnsureCreated();
-            ApplyLocalCdnDefaults(config);
+            ApplyFixedSources(config);
             await SaveCoreAsync(config, cancellationToken);
         }
         finally
@@ -80,12 +82,10 @@ public sealed class LauncherConfigStore
         }
     }
 
-    private static bool ApplyLocalCdnDefaults(LauncherConfig config)
+    private static bool ApplyFixedSources(LauncherConfig config)
     {
         var changed = false;
-        changed |= SetIfDifferent(config.ClientsManifestUrl, Path.Combine(LocalCdnRoot, "clients.json"), value => config.ClientsManifestUrl = value);
-        changed |= SetIfDifferent(config.JavaRuntimesManifestUrl, Path.Combine(LocalCdnRoot, "java-runtimes.json"), value => config.JavaRuntimesManifestUrl = value);
-        changed |= SetIfDifferent(config.AnnouncementUrl, Path.Combine(LocalCdnRoot, "announcement.json"), value => config.AnnouncementUrl = value);
+        changed |= SetIfDifferent(config.ClientsManifestUrl, FixedClientsManifestUrl, value => config.ClientsManifestUrl = value);
         return changed;
     }
 

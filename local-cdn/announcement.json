@@ -1,0 +1,15 @@
+{
+  "title": "服务器公告",
+  "items": [
+    {
+      "title": "本地测试公告",
+      "content": "这是本地 announcement.json，用来验证启动器右侧公告区域是否正常显示。",
+      "date": "2026-04-29"
+    },
+    {
+      "title": "客户端下载提示",
+      "content": "当前测试配置的客户端包地址是占位 HTTPS 地址，正式测试下载前请替换 packUrl 与 packSha256。",
+      "date": "2026-04-29"
+    }
+  ]
+}

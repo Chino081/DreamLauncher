@@ -1,0 +1,28 @@
+{
+  "launcherVersion": "1.0.0",
+  "announcementUrl": "https://cdn.example.com/announcement.json",
+  "javaRuntimesUrl": "https://cdn.example.com/java-runtimes.json",
+  "clients": [
+    {
+      "id": "survival",
+      "name": "生存服",
+      "description": "主线生存服务器",
+      "version": "1.0.0",
+      "minecraftVersion": "1.20.1",
+      "loader": "forge",
+      "loaderVersion": "47.2.0",
+      "javaVersion": 17,
+      "serverAddress": "mc.example.com",
+      "defaultMemoryMb": 4096,
+      "jvmArgs": "-XX:+UseG1GC",
+      "gameArgs": "",
+      "packUrl": "https://cdn.example.com/packs/survival-1.0.0.zip",
+      "packSha256": "填写SHA256",
+      "packSize": 2147483648,
+      "installDir": "survival",
+      "coverUrl": "https://cdn.example.com/images/survival-cover.jpg",
+      "iconUrl": "https://cdn.example.com/images/survival-icon.png",
+      "enabled": true
+    }
+  ]
+}

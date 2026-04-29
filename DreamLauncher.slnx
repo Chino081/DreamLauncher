@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/DreamLauncher/">
+    <Project Path="DreamLauncher/DreamLauncher.Core/DreamLauncher.Core.csproj" />
+    <Project Path="DreamLauncher/DreamLauncher.Models/DreamLauncher.Models.csproj" />
+    <Project Path="DreamLauncher/DreamLauncher.Windows/DreamLauncher.Windows.csproj" />
+  </Folder>
+</Solution>

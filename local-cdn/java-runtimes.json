@@ -1,0 +1,25 @@
+{
+  "runtimes": [
+    {
+      "version": 8,
+      "name": "Temurin JRE 8",
+      "windowsX64Url": "https://cdn.example.com/java/temurin-jre8-windows-x64.zip",
+      "windowsX64Sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 52428800
+    },
+    {
+      "version": 17,
+      "name": "Temurin JRE 17",
+      "windowsX64Url": "https://cdn.example.com/java/temurin-jre17-windows-x64.zip",
+      "windowsX64Sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 73400320
+    },
+    {
+      "version": 21,
+      "name": "Temurin JRE 21",
+      "windowsX64Url": "https://cdn.example.com/java/temurin-jre21-windows-x64.zip",
+      "windowsX64Sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 83886080
+    }
+  ]
+}

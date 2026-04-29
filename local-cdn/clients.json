@@ -1,0 +1,49 @@
+{
+  "launcherVersion": "0.1.0",
+  "announcementUrl": "file:///F:/Chino/DreamtcTamracLauncherNew/local-cdn/announcement.json",
+  "javaRuntimesUrl": "file:///F:/Chino/DreamtcTamracLauncherNew/local-cdn/java-runtimes.json",
+  "clients": [
+    {
+      "id": "survival",
+      "name": "生存服",
+      "description": "主线生存服务器，本地配置测试用。",
+      "version": "1.0.0",
+      "minecraftVersion": "1.20.1",
+      "loader": "forge",
+      "loaderVersion": "47.2.0",
+      "javaVersion": 17,
+      "serverAddress": "mc.example.com",
+      "defaultMemoryMb": 4096,
+      "jvmArgs": "-XX:+UseG1GC",
+      "gameArgs": "",
+      "packUrl": "https://alist.mcdtc.com/d/DreamTamrac/Mc%E6%A2%A6%E6%83%B3%E5%A4%A9%E5%9F%9F.zip?sign=eEt9IXSTmdq59aFMYA9bz9a5JfpekEl-fKFjAUIdnWg=:0",
+      "packSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "packSize": 2147483648,
+      "installDir": "survival",
+      "coverUrl": "",
+      "iconUrl": "",
+      "enabled": true
+    },
+    {
+      "id": "test",
+      "name": "测试服",
+      "description": "用于验证多客户端列表、状态和切换逻辑。",
+      "version": "0.1.0",
+      "minecraftVersion": "1.21.1",
+      "loader": "fabric",
+      "loaderVersion": "0.16.10",
+      "javaVersion": 21,
+      "serverAddress": "test.example.com",
+      "defaultMemoryMb": 3072,
+      "jvmArgs": "",
+      "gameArgs": "",
+      "packUrl": "https://cdn.example.com/packs/test-0.1.0.zip",
+      "packSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "packSize": 536870912,
+      "installDir": "test",
+      "coverUrl": "",
+      "iconUrl": "",
+      "enabled": true
+    }
+  ]
+}

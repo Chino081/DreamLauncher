@@ -283,8 +283,10 @@ public sealed class MainWindowViewModel : ObservableObject
                 account,
                 tokens,
                 java,
-                config.AuthlibInjectorJarPath,
-                cancellationToken);
+                authlibInjectorJarPath: config.AuthlibInjectorJarPath,
+                maxRetryCount: config.Download.MaxRetryCount,
+                progress: CreateProgressReporter(selectedClient),
+                cancellationToken: cancellationToken);
 
             StatusMessage = $"游戏已启动，进程 ID：{result.ProcessId}";
             OperationText = $"启动日志：{result.LogPath}";

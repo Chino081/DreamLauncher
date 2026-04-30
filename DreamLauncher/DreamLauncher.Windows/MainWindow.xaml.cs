@@ -64,7 +64,7 @@ public partial class MainWindow : Window
         _accountManager = new AccountManager(_configStore, accountProfileStore, tokenStore, authService, thirdPartyAuthService);
         var clientManager = new ClientManager(_paths, downloadService, extractor);
         _javaRuntimeManager = new JavaRuntimeManager(_paths, downloadService, extractor);
-        var minecraftLaunchService = new MinecraftLaunchService(_paths);
+        var minecraftLaunchService = new MinecraftLaunchService(_paths, downloadService);
         _launcherUpdateService = new LauncherUpdateService(_paths, remoteConfigClient, downloadService);
         _minecraftContentManager = new MinecraftContentManager(_paths);
 

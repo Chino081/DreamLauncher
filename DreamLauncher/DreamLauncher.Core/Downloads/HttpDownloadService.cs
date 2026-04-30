@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using DreamLauncher.Core.Security;
 using DreamLauncher.Models.Operations;
 
@@ -42,6 +43,45 @@ public sealed class HttpDownloadService
                 });
 
                 await Sha256Hasher.VerifyFileAsync(destinationPath, expectedSha256, cancellationToken);
+                return;
+            }
+            catch when (attempt < retryCount && !cancellationToken.IsCancellationRequested)
+            {
+                TryDelete(destinationPath);
+                TryDelete(destinationPath + ".download");
+                await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
+            }
+        }
+    }
+
+    public async Task DownloadFileWithSha1Async(
+        string url,
+        string destinationPath,
+        string expectedSha1,
+        int maxRetryCount,
+        IProgress<LauncherOperationProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var source = UrlSecurity.RequireHttps(url, nameof(url));
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+        var retryCount = Math.Max(1, maxRetryCount);
+
+        for (var attempt = 1; attempt <= retryCount; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await DownloadOnceAsync(source, destinationPath, progress, cancellationToken);
+
+                progress?.Report(new LauncherOperationProgress
+                {
+                    Stage = "verify",
+                    Message = "正在校验 SHA1",
+                    Progress = null
+                });
+
+                await VerifySha1FileAsync(destinationPath, expectedSha1, cancellationToken);
                 return;
             }
             catch when (attempt < retryCount && !cancellationToken.IsCancellationRequested)
@@ -126,6 +166,26 @@ public sealed class HttpDownloadService
             SpeedBytesPerSecond = speed,
             EstimatedRemaining = remaining
         });
+    }
+
+    private static async Task VerifySha1FileAsync(
+        string filePath,
+        string expectedSha1,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSha1))
+        {
+            throw new InvalidOperationException("缺少 SHA1 校验值。");
+        }
+
+        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var hash = await SHA1.HashDataAsync(stream, cancellationToken);
+        var actual = Convert.ToHexString(hash).ToLowerInvariant();
+        if (!string.Equals(actual, expectedSha1.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            TryDelete(filePath);
+            throw new InvalidDataException("文件 SHA1 校验失败，下载文件已删除。");
+        }
     }
 
     private static void TryDelete(string path)

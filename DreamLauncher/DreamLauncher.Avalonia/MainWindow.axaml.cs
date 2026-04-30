@@ -16,6 +16,8 @@ using DreamLauncher.Core.Java;
 using DreamLauncher.Core.Minecraft;
 using DreamLauncher.Core.Remote;
 using DreamLauncher.Core.Security;
+using DreamLauncher.Models.Minecraft;
+using System.Diagnostics;
 using System.Globalization;
 
 namespace DreamLauncher.Avalonia;
@@ -23,6 +25,8 @@ namespace DreamLauncher.Avalonia;
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
+    private readonly MinecraftContentManager _minecraftContentManager;
+    private GameContentKind _selectedContentKind = GameContentKind.Mod;
 
     public MainWindow()
     {
@@ -44,7 +48,8 @@ public partial class MainWindow : Window
         var accountManager = new AccountManager(configStore, accountProfileStore, tokenStore, authService, thirdPartyAuthService);
         var clientManager = new ClientManager(paths, downloadService, extractor);
         var javaRuntimeManager = new JavaRuntimeManager(paths, downloadService, extractor);
-        var minecraftLaunchService = new MinecraftLaunchService(paths);
+        var minecraftLaunchService = new MinecraftLaunchService(paths, downloadService);
+        _minecraftContentManager = new MinecraftContentManager(paths);
 
         _viewModel = new MainWindowViewModel(
             paths,
@@ -58,6 +63,14 @@ public partial class MainWindow : Window
 
         _viewModel.MessageRequested += async (title, message) => await MessageDialog.ShowAsync(this, title, message);
         _viewModel.GameLaunchSucceeded += Close;
+        _viewModel.PropertyChanged += async (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.SelectedClient) &&
+                ContentPage?.IsVisible == true)
+            {
+                await RefreshGameContentAsync();
+            }
+        };
         DataContext = _viewModel;
         Opened += async (_, _) =>
         {
@@ -74,6 +87,13 @@ public partial class MainWindow : Window
     private void DownloadNav_Click(object? sender, RoutedEventArgs e)
     {
         SetActivePage("download");
+    }
+
+    private async void ContentNav_Click(object? sender, RoutedEventArgs e)
+    {
+        SetActivePage("content");
+        ShowContentSubPage(_selectedContentKind);
+        await RefreshGameContentAsync();
     }
 
     private async void SettingsNav_Click(object? sender, RoutedEventArgs e)
@@ -127,6 +147,209 @@ public partial class MainWindow : Window
         }
 
         _viewModel.PrimaryActionCommand.Execute(null);
+    }
+
+    private async void RefreshContent_Click(object? sender, RoutedEventArgs e)
+    {
+        await RefreshGameContentAsync();
+    }
+
+    private void ModSubNav_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowContentSubPage(GameContentKind.Mod);
+    }
+
+    private void ResourcePackSubNav_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowContentSubPage(GameContentKind.ResourcePack);
+    }
+
+    private void ShaderPackSubNav_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowContentSubPage(GameContentKind.ShaderPack);
+    }
+
+    private void ShowContentSubPage(GameContentKind kind)
+    {
+        _selectedContentKind = kind;
+        ContentSubTitleTextBlock.Text = kind switch
+        {
+            GameContentKind.ResourcePack => "资源包",
+            GameContentKind.ShaderPack => "光影包",
+            _ => "Mod"
+        };
+
+        ModContentPanel.IsVisible = kind == GameContentKind.Mod;
+        ResourcePackContentPanel.IsVisible = kind == GameContentKind.ResourcePack;
+        ShaderPackContentPanel.IsVisible = kind == GameContentKind.ShaderPack;
+
+        SetNavState(ModSubNavButton, kind == GameContentKind.Mod);
+        SetNavState(ResourcePackSubNavButton, kind == GameContentKind.ResourcePack);
+        SetNavState(ShaderPackSubNavButton, kind == GameContentKind.ShaderPack);
+    }
+
+    private async Task RefreshGameContentAsync()
+    {
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            _viewModel.ClearContentInventory("请选择一个已安装客户端。");
+            return;
+        }
+
+        try
+        {
+            var inventory = await _minecraftContentManager.GetInventoryAsync(selectedClient.Installation);
+            _viewModel.ApplyContentInventory(inventory);
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ClearContentInventory(ex.Message);
+        }
+    }
+
+    private void ContentDropZone_DragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = e.DataTransfer.Contains(DataFormat.File)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void ResourcePackDrop_Drop(object? sender, DragEventArgs e)
+    {
+        await InstallDroppedContentAsync(GameContentKind.ResourcePack, e);
+    }
+
+    private async void ShaderPackDrop_Drop(object? sender, DragEventArgs e)
+    {
+        await InstallDroppedContentAsync(GameContentKind.ShaderPack, e);
+    }
+
+    private async void ModDrop_Drop(object? sender, DragEventArgs e)
+    {
+        await InstallDroppedContentAsync(GameContentKind.Mod, e);
+    }
+
+    private async Task InstallDroppedContentAsync(GameContentKind kind, DragEventArgs e)
+    {
+        var paths = e.DataTransfer.TryGetFiles()?
+            .Select(item => item.TryGetLocalPath())
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .ToArray();
+
+        if (paths is null || paths.Length == 0)
+        {
+            return;
+        }
+
+        await InstallContentFilesAsync(kind, paths);
+    }
+
+    private async void InstallContentFromFile_Click(object? sender, RoutedEventArgs e)
+    {
+        var fileType = _selectedContentKind == GameContentKind.Mod
+            ? new FilePickerFileType("Minecraft Mod") { Patterns = ["*.jar"] }
+            : new FilePickerFileType("Minecraft 资源包 / 光影包") { Patterns = ["*.zip"] };
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择要安装的资源文件",
+            AllowMultiple = true,
+            FileTypeFilter = [fileType, FilePickerFileTypes.All]
+        });
+
+        var paths = files
+            .Select(file => file.Path.LocalPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToArray();
+
+        await InstallContentFilesAsync(_selectedContentKind, paths);
+    }
+
+    private async Task InstallContentFilesAsync(GameContentKind kind, IReadOnlyCollection<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            await MessageDialog.ShowAsync(this, "资源管理", "请先选择一个客户端。");
+            return;
+        }
+
+        try
+        {
+            _viewModel.ContentStatusMessage = "正在安装资源文件...";
+            await _minecraftContentManager.InstallAsync(selectedClient.Installation, kind, paths);
+            await RefreshGameContentAsync();
+            await MessageDialog.ShowAsync(this, "资源管理", "安装完成。");
+        }
+        catch (Exception ex)
+        {
+            await RefreshGameContentAsync();
+            await MessageDialog.ShowAsync(this, "安装失败", ex.Message);
+        }
+    }
+
+    private async void OpenContentFolder_Click(object? sender, RoutedEventArgs e)
+    {
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            await MessageDialog.ShowAsync(this, "资源管理", "请先选择一个客户端。");
+            return;
+        }
+
+        try
+        {
+            var inventory = await _minecraftContentManager.GetInventoryAsync(selectedClient.Installation);
+            var directory = _selectedContentKind switch
+            {
+                GameContentKind.ResourcePack => inventory.ResourcePacksDirectory,
+                GameContentKind.ShaderPack => inventory.ShaderPacksDirectory,
+                _ => inventory.ModsDirectory
+            };
+
+            OpenDirectory(directory);
+        }
+        catch (Exception ex)
+        {
+            await MessageDialog.ShowAsync(this, "打开失败", ex.Message);
+        }
+    }
+
+    private async void ToggleContentItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: GameContentItemViewModel item })
+        {
+            return;
+        }
+
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            await MessageDialog.ShowAsync(this, "资源管理", "请先选择一个客户端。");
+            return;
+        }
+
+        try
+        {
+            await _minecraftContentManager.SetEnabledAsync(
+                selectedClient.Installation,
+                item.Kind,
+                item.FileName,
+                !item.IsEnabled);
+            await RefreshGameContentAsync();
+        }
+        catch (Exception ex)
+        {
+            await MessageDialog.ShowAsync(this, "切换失败", ex.Message);
+        }
     }
 
     private async void ChooseJava_Click(object? sender, RoutedEventArgs e)
@@ -265,14 +488,38 @@ public partial class MainWindow : Window
         Close();
     }
 
+    private static void OpenDirectory(string directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = directory,
+                UseShellExecute = true
+            });
+            return;
+        }
+
+        var opener = OperatingSystem.IsMacOS() ? "open" : "xdg-open";
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = opener,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add(directory);
+        Process.Start(startInfo);
+    }
+
     private void SetActivePage(string page)
     {
         LaunchPage.IsVisible = page == "launch";
         DownloadPage.IsVisible = page == "download";
+        ContentPage.IsVisible = page == "content";
         SettingsPage.IsVisible = page == "settings";
 
         SetNavState(LaunchNavButton, page == "launch");
         SetNavState(DownloadNavButton, page == "download");
+        SetNavState(ContentNavButton, page == "content");
         SetNavState(SettingsNavButton, page == "settings");
     }
 

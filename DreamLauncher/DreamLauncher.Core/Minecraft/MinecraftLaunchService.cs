@@ -5,20 +5,24 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using DreamLauncher.Core.Config;
+using DreamLauncher.Core.Downloads;
 using DreamLauncher.Core.Java;
 using DreamLauncher.Core.Security;
 using DreamLauncher.Models.Accounts;
 using DreamLauncher.Models.Clients;
+using DreamLauncher.Models.Operations;
 
 namespace DreamLauncher.Core.Minecraft;
 
 public sealed class MinecraftLaunchService
 {
     private readonly LauncherPaths _paths;
+    private readonly HttpDownloadService _downloadService;
 
-    public MinecraftLaunchService(LauncherPaths paths)
+    public MinecraftLaunchService(LauncherPaths paths, HttpDownloadService? downloadService = null)
     {
         _paths = paths;
+        _downloadService = downloadService ?? new HttpDownloadService();
     }
 
     public async Task<MinecraftLaunchResult> LaunchAsync(
@@ -27,6 +31,8 @@ public sealed class MinecraftLaunchService
         SecureAccountTokens tokens,
         JavaRuntimeInfo java,
         string? authlibInjectorJarPath = null,
+        int maxRetryCount = 3,
+        IProgress<LauncherOperationProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         if (client.Status != ClientInstallStatus.Ready)
@@ -45,6 +51,8 @@ public sealed class MinecraftLaunchService
             tokens,
             java,
             authlibInjectorJarPath,
+            maxRetryCount,
+            progress,
             cancellationToken);
         var logPath = Path.Combine(
             _paths.LogsPath,
@@ -136,6 +144,8 @@ public sealed class MinecraftLaunchService
         SecureAccountTokens tokens,
         JavaRuntimeInfo java,
         string? authlibInjectorJarPath,
+        int maxRetryCount,
+        IProgress<LauncherOperationProgress>? progress,
         CancellationToken cancellationToken)
     {
         var minecraftDirectory = Path.Combine(client.InstallPath, ".minecraft");
@@ -165,7 +175,13 @@ public sealed class MinecraftLaunchService
         var nativesDirectory = Path.Combine(minecraftDirectory, "natives", versionId, GetNativeRuntimeId());
         Directory.CreateDirectory(gameDirectory);
         ResetNativesDirectory(nativesDirectory);
-        ExtractNativeLibraries(minecraftDirectory, root, nativesDirectory, cancellationToken);
+        await ExtractNativeLibrariesAsync(
+            minecraftDirectory,
+            root,
+            nativesDirectory,
+            maxRetryCount,
+            progress,
+            cancellationToken);
 
         var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -464,10 +480,12 @@ public sealed class MinecraftLaunchService
         return true;
     }
 
-    private static void ExtractNativeLibraries(
+    private async Task ExtractNativeLibrariesAsync(
         string minecraftDirectory,
         JsonElement root,
         string nativesDirectory,
+        int maxRetryCount,
+        IProgress<LauncherOperationProgress>? progress,
         CancellationToken cancellationToken)
     {
         if (!root.TryGetProperty("libraries", out var libraries) || libraries.ValueKind != JsonValueKind.Array)
@@ -485,22 +503,50 @@ public sealed class MinecraftLaunchService
                 continue;
             }
 
-            var isNativeLibrary = TryResolveNativeLibraryPath(librariesDirectory, library, out var nativeLibraryPath) ||
-                                  TryResolveNativeArtifactLibraryPath(librariesDirectory, library, out nativeLibraryPath);
+            var isNativeLibrary = TryResolveNativeLibraryDownload(librariesDirectory, library, out var nativeLibrary) ||
+                                  TryResolveNativeArtifactLibraryDownload(librariesDirectory, library, out nativeLibrary);
             if (!isNativeLibrary)
             {
                 continue;
             }
 
-            if (!File.Exists(nativeLibraryPath))
+            if (!File.Exists(nativeLibrary.LocalPath))
             {
-                throw new FileNotFoundException(
-                    $"缺少当前系统需要的 Minecraft natives 文件：{GetMinecraftOsName()} / {RuntimeInformation.ProcessArchitecture}",
-                    nativeLibraryPath);
+                await DownloadMissingNativeLibraryAsync(nativeLibrary, maxRetryCount, progress, cancellationToken);
             }
 
-            ExtractNativeArchive(nativeLibraryPath, nativesDirectory, ReadNativeExtractExcludes(library), cancellationToken);
+            ExtractNativeArchive(nativeLibrary.LocalPath, nativesDirectory, ReadNativeExtractExcludes(library), cancellationToken);
         }
+    }
+
+    private async Task DownloadMissingNativeLibraryAsync(
+        LibraryDownload nativeLibrary,
+        int maxRetryCount,
+        IProgress<LauncherOperationProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(nativeLibrary.Url) ||
+            string.IsNullOrWhiteSpace(nativeLibrary.Sha1))
+        {
+            throw new FileNotFoundException(
+                $"缺少当前系统需要的 Minecraft natives 文件，且版本 JSON 没有提供可自动补全的下载信息：{GetMinecraftOsName()} / {RuntimeInformation.ProcessArchitecture}",
+                nativeLibrary.LocalPath);
+        }
+
+        progress?.Report(new LauncherOperationProgress
+        {
+            Stage = "download",
+            Message = $"正在补全 Minecraft native：{Path.GetFileName(nativeLibrary.LocalPath)}",
+            Progress = null
+        });
+
+        await _downloadService.DownloadFileWithSha1Async(
+            nativeLibrary.Url,
+            nativeLibrary.LocalPath,
+            nativeLibrary.Sha1,
+            maxRetryCount,
+            progress,
+            cancellationToken);
     }
 
     private static void ResetNativesDirectory(string nativesDirectory)
@@ -513,12 +559,12 @@ public sealed class MinecraftLaunchService
         Directory.CreateDirectory(nativesDirectory);
     }
 
-    private static bool TryResolveNativeLibraryPath(
+    private static bool TryResolveNativeLibraryDownload(
         string librariesDirectory,
         JsonElement library,
-        out string nativeLibraryPath)
+        out LibraryDownload nativeLibrary)
     {
-        nativeLibraryPath = "";
+        nativeLibrary = LibraryDownload.Empty;
 
         if (!library.TryGetProperty("natives", out var natives) ||
             natives.ValueKind != JsonValueKind.Object ||
@@ -534,42 +580,25 @@ public sealed class MinecraftLaunchService
             return false;
         }
 
-        foreach (var candidate in BuildNativeClassifierCandidates(classifier))
+        var fallbackClassifier = classifier.Replace("${arch}", Environment.Is64BitOperatingSystem ? "64" : "32", StringComparison.Ordinal);
+        foreach (var candidate in BuildNativeClassifierCandidates(classifier).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var path = ReadNestedString(library, "downloads", "classifiers", candidate, "path")
-                ?? BuildLibraryPathFromName(library, candidate);
-
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                continue;
-            }
-
-            nativeLibraryPath = Path.Combine(librariesDirectory, path.Replace('/', Path.DirectorySeparatorChar));
-            if (File.Exists(nativeLibraryPath))
+            var requireDownloadMetadata = !string.Equals(candidate, fallbackClassifier, StringComparison.OrdinalIgnoreCase);
+            if (TryBuildClassifierDownload(librariesDirectory, library, candidate, requireDownloadMetadata, out nativeLibrary))
             {
                 return true;
             }
         }
 
-        var fallbackClassifier = classifier.Replace("${arch}", Environment.Is64BitOperatingSystem ? "64" : "32", StringComparison.Ordinal);
-        var fallbackPath = ReadNestedString(library, "downloads", "classifiers", fallbackClassifier, "path")
-            ?? BuildLibraryPathFromName(library, fallbackClassifier);
-
-        if (string.IsNullOrWhiteSpace(fallbackPath))
-        {
-            return false;
-        }
-
-        nativeLibraryPath = Path.Combine(librariesDirectory, fallbackPath.Replace('/', Path.DirectorySeparatorChar));
-        return true;
+        return false;
     }
 
-    private static bool TryResolveNativeArtifactLibraryPath(
+    private static bool TryResolveNativeArtifactLibraryDownload(
         string librariesDirectory,
         JsonElement library,
-        out string nativeLibraryPath)
+        out LibraryDownload nativeLibrary)
     {
-        nativeLibraryPath = "";
+        nativeLibrary = LibraryDownload.Empty;
 
         if (!TryGetNativeClassifierFromLibraryName(library, out var classifier) ||
             string.IsNullOrWhiteSpace(classifier) ||
@@ -578,16 +607,88 @@ public sealed class MinecraftLaunchService
             return false;
         }
 
-        var path = ReadNestedString(library, "downloads", "artifact", "path")
-            ?? BuildLibraryPathFromName(library, classifier);
+        var hasArtifactDownload = TryGetNestedElement(library, out var artifactDownload, "downloads", "artifact");
+        var downloadPath = hasArtifactDownload ? ReadString(artifactDownload, "path") : null;
+        var path = downloadPath ?? BuildLibraryPathFromName(library, classifier);
 
         if (string.IsNullOrWhiteSpace(path))
         {
             return false;
         }
 
-        nativeLibraryPath = Path.Combine(librariesDirectory, path.Replace('/', Path.DirectorySeparatorChar));
+        var url = hasArtifactDownload ? ReadString(artifactDownload, "url") : null;
+        var sha1 = hasArtifactDownload ? ReadString(artifactDownload, "sha1") : null;
+        nativeLibrary = new LibraryDownload(
+            GetLibraryLocalPath(librariesDirectory, path),
+            url ?? BuildLibraryDownloadUrl(library, path),
+            sha1);
         return true;
+    }
+
+    private static bool TryBuildClassifierDownload(
+        string librariesDirectory,
+        JsonElement library,
+        string classifier,
+        bool requireDownloadMetadata,
+        out LibraryDownload nativeLibrary)
+    {
+        nativeLibrary = LibraryDownload.Empty;
+        var hasClassifierDownload = TryGetNestedElement(
+            library,
+            out var classifierDownload,
+            "downloads",
+            "classifiers",
+            classifier);
+
+        if (requireDownloadMetadata && !hasClassifierDownload)
+        {
+            var generatedPath = BuildLibraryPathFromName(library, classifier);
+            if (string.IsNullOrWhiteSpace(generatedPath))
+            {
+                return false;
+            }
+
+            var generatedLocalPath = GetLibraryLocalPath(librariesDirectory, generatedPath);
+            if (!File.Exists(generatedLocalPath))
+            {
+                return false;
+            }
+
+            nativeLibrary = new LibraryDownload(generatedLocalPath, null, null);
+            return true;
+        }
+
+        var downloadPath = hasClassifierDownload ? ReadString(classifierDownload, "path") : null;
+        var path = downloadPath ?? BuildLibraryPathFromName(library, classifier);
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var url = hasClassifierDownload ? ReadString(classifierDownload, "url") : null;
+        var sha1 = hasClassifierDownload ? ReadString(classifierDownload, "sha1") : null;
+        nativeLibrary = new LibraryDownload(
+            GetLibraryLocalPath(librariesDirectory, path),
+            url ?? BuildLibraryDownloadUrl(library, path),
+            sha1);
+        return true;
+    }
+
+    private static string GetLibraryLocalPath(string librariesDirectory, string path)
+    {
+        return Path.Combine(librariesDirectory, path.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static string BuildLibraryDownloadUrl(JsonElement library, string path)
+    {
+        var baseUrl = ReadString(library, "url");
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            baseUrl = "https://libraries.minecraft.net/";
+        }
+
+        return $"{baseUrl.TrimEnd('/')}/{path.Replace('\\', '/').TrimStart('/')}";
     }
 
     private static bool TryGetNativeClassifierFromLibraryName(JsonElement library, out string? classifier)
@@ -903,16 +1004,24 @@ public sealed class MinecraftLaunchService
 
     private static string? ReadNestedString(JsonElement root, params string[] path)
     {
-        var current = root;
+        return TryGetNestedElement(root, out var value, path) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private static bool TryGetNestedElement(JsonElement root, out JsonElement value, params string[] path)
+    {
+        value = root;
         foreach (var item in path)
         {
-            if (!current.TryGetProperty(item, out current))
+            if (value.ValueKind != JsonValueKind.Object ||
+                !value.TryGetProperty(item, out value))
             {
-                return null;
+                return false;
             }
         }
 
-        return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
+        return true;
     }
 
     private static string? ReadString(JsonElement root, string propertyName)
@@ -1007,6 +1116,11 @@ public sealed class MinecraftLaunchService
         {
             arguments.Add("-Dauthlibinjector.yggdrasil.prefetched=" + account.AuthServerMetadataBase64);
         }
+    }
+
+    private sealed record LibraryDownload(string LocalPath, string? Url, string? Sha1)
+    {
+        public static LibraryDownload Empty { get; } = new("", null, null);
     }
 
     private sealed record LaunchPlan(string WorkingDirectory, IReadOnlyList<string> Arguments);

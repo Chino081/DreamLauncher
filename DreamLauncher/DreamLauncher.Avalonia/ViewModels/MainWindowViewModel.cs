@@ -10,6 +10,7 @@ using DreamLauncher.Models.Announcements;
 using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Config;
 using DreamLauncher.Models.Java;
+using DreamLauncher.Models.Minecraft;
 using DreamLauncher.Models.Operations;
 using System.Runtime.InteropServices;
 
@@ -33,6 +34,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private string _currentDownloadStatusText = "状态：暂无下载";
     private string _downloadSpeedText = "下载速度：0 KB/s";
     private string _downloadSizeText = "下载大小：0 MB / 0 MB";
+    private string _contentStatusMessage = "请选择一个已安装客户端。";
+    private string _contentGameDirectory = "";
     private double _progressValue;
     private bool _hasProgress;
     private bool _isBusy;
@@ -85,6 +88,18 @@ public sealed class MainWindowViewModel : ObservableObject
     public ObservableCollection<AnnouncementItem> Announcements { get; } = [];
 
     public ObservableCollection<AccountMetadata> Accounts { get; } = [];
+
+    public ObservableCollection<GameContentItemViewModel> ResourcePacks { get; } = [];
+
+    public ObservableCollection<GameContentItemViewModel> ShaderPacks { get; } = [];
+
+    public ObservableCollection<GameContentItemViewModel> Mods { get; } = [];
+
+    public string ResourcePacksTabText => $"▣ 资源包（{ResourcePacks.Count}）";
+
+    public string ShaderPacksTabText => $"☀ 光影包（{ShaderPacks.Count}）";
+
+    public string ModsTabText => $"🔧 Mod（{Mods.Count}）";
 
     public ObservableCollection<JavaRuntimeOption> JavaRuntimeOptions { get; } = [];
 
@@ -191,6 +206,18 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _downloadSizeText;
         set => SetProperty(ref _downloadSizeText, value);
+    }
+
+    public string ContentStatusMessage
+    {
+        get => _contentStatusMessage;
+        set => SetProperty(ref _contentStatusMessage, value);
+    }
+
+    public string ContentGameDirectory
+    {
+        get => _contentGameDirectory;
+        set => SetProperty(ref _contentGameDirectory, value);
     }
 
     public double ProgressValue
@@ -364,6 +391,28 @@ public sealed class MainWindowViewModel : ObservableObject
         await _accountManager.RemoveAccountAsync(account.Id);
         await LoadAccountsAsync(CancellationToken.None);
         StatusMessage = $"已删除账号 {account.PlayerName}";
+    }
+
+    public void ApplyContentInventory(GameContentInventory inventory)
+    {
+        ReplaceContentItems(ResourcePacks, inventory.ResourcePacks);
+        ReplaceContentItems(ShaderPacks, inventory.ShaderPacks);
+        ReplaceContentItems(Mods, inventory.Mods);
+
+        ContentGameDirectory = inventory.GameDirectory;
+        ContentStatusMessage =
+            $"当前客户端：{SelectedClient?.Name ?? "未选择"}，资源包 {ResourcePacks.Count} 个，光影包 {ShaderPacks.Count} 个，Mod {Mods.Count} 个。";
+        RaiseContentTabTextChanged();
+    }
+
+    public void ClearContentInventory(string message)
+    {
+        ResourcePacks.Clear();
+        ShaderPacks.Clear();
+        Mods.Clear();
+        ContentGameDirectory = "";
+        ContentStatusMessage = message;
+        RaiseContentTabTextChanged();
     }
 
     public async Task SaveSettingsAsync()
@@ -548,8 +597,10 @@ public sealed class MainWindowViewModel : ObservableObject
                 account,
                 tokens,
                 java,
-                config.AuthlibInjectorJarPath,
-                cancellationToken);
+                authlibInjectorJarPath: config.AuthlibInjectorJarPath,
+                maxRetryCount: config.Download.MaxRetryCount,
+                progress: CreateProgressReporter(selectedClient),
+                cancellationToken: cancellationToken);
 
             StatusMessage = $"游戏已启动，进程 ID：{result.ProcessId}";
             OperationText = $"启动日志：{result.LogPath}";
@@ -577,6 +628,24 @@ public sealed class MainWindowViewModel : ObservableObject
             config.Download.MaxRetryCount,
             CreateProgressReporter(SelectedClient),
             cancellationToken);
+    }
+
+    private static void ReplaceContentItems(
+        ObservableCollection<GameContentItemViewModel> target,
+        IEnumerable<GameContentItem> source)
+    {
+        target.Clear();
+        foreach (var item in source)
+        {
+            target.Add(new GameContentItemViewModel(item));
+        }
+    }
+
+    private void RaiseContentTabTextChanged()
+    {
+        OnPropertyChanged(nameof(ResourcePacksTabText));
+        OnPropertyChanged(nameof(ShaderPacksTabText));
+        OnPropertyChanged(nameof(ModsTabText));
     }
 
     private async Task LoadAccountsAsync(CancellationToken cancellationToken)

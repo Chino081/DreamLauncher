@@ -18,6 +18,7 @@ using DreamLauncher.Core.Remote;
 using DreamLauncher.Core.Updates;
 using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Config;
+using DreamLauncher.Models.Minecraft;
 using DreamLauncher.Models.Operations;
 using DreamLauncher.Windows.Accounts;
 using DreamLauncher.Windows.Dialogs;
@@ -35,10 +36,12 @@ public partial class MainWindow : Window
     private readonly AccountManager _accountManager;
     private readonly JavaRuntimeManager _javaRuntimeManager;
     private readonly LauncherUpdateService _launcherUpdateService;
+    private readonly MinecraftContentManager _minecraftContentManager;
     private readonly MainWindowViewModel _viewModel;
     private CancellationTokenSource? _javaRuntimeRefreshCancellation;
     private bool _isUpdatingJavaRuntimeOptions;
     private bool _isUpdatingMemoryOptions;
+    private GameContentKind _selectedContentKind = GameContentKind.Mod;
     private int _javaRuntimeRefreshRequestId;
 
     public MainWindow()
@@ -63,6 +66,7 @@ public partial class MainWindow : Window
         _javaRuntimeManager = new JavaRuntimeManager(_paths, downloadService, extractor);
         var minecraftLaunchService = new MinecraftLaunchService(_paths);
         _launcherUpdateService = new LauncherUpdateService(_paths, remoteConfigClient, downloadService);
+        _minecraftContentManager = new MinecraftContentManager(_paths);
 
         _viewModel = new MainWindowViewModel(
             _configStore,
@@ -85,6 +89,12 @@ public partial class MainWindow : Window
             {
                 await RefreshJavaRuntimeOptionsAsync();
                 await RefreshMemoryOptionsAsync();
+            }
+
+            if (args.PropertyName == nameof(MainWindowViewModel.SelectedClient) &&
+                ContentPage?.Visibility == Visibility.Visible)
+            {
+                await RefreshGameContentAsync();
             }
         };
         Loaded += MainWindow_Loaded;
@@ -273,6 +283,13 @@ public partial class MainWindow : Window
         ShowPage("download");
     }
 
+    private async void ContentNav_Click(object sender, RoutedEventArgs e)
+    {
+        ShowPage("content");
+        ShowContentSubPage(_selectedContentKind);
+        await RefreshGameContentAsync();
+    }
+
     private async void SettingsNav_Click(object sender, RoutedEventArgs e)
     {
         await LoadInlineSettingsAsync();
@@ -328,6 +345,203 @@ public partial class MainWindow : Window
         if (_viewModel.PrimaryActionCommand.CanExecute(null))
         {
             _viewModel.PrimaryActionCommand.Execute(null);
+        }
+    }
+
+    private async void RefreshContent_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshGameContentAsync();
+    }
+
+    private void ModSubNav_Click(object sender, RoutedEventArgs e)
+    {
+        ShowContentSubPage(GameContentKind.Mod);
+    }
+
+    private void ResourcePackSubNav_Click(object sender, RoutedEventArgs e)
+    {
+        ShowContentSubPage(GameContentKind.ResourcePack);
+    }
+
+    private void ShaderPackSubNav_Click(object sender, RoutedEventArgs e)
+    {
+        ShowContentSubPage(GameContentKind.ShaderPack);
+    }
+
+    private void ShowContentSubPage(GameContentKind kind)
+    {
+        _selectedContentKind = kind;
+        ContentSubTitleTextBlock.Text = kind switch
+        {
+            GameContentKind.ResourcePack => "资源包",
+            GameContentKind.ShaderPack => "光影包",
+            _ => "Mod"
+        };
+
+        ModContentPanel.Visibility = kind == GameContentKind.Mod ? Visibility.Visible : Visibility.Collapsed;
+        ResourcePackContentPanel.Visibility = kind == GameContentKind.ResourcePack ? Visibility.Visible : Visibility.Collapsed;
+        ShaderPackContentPanel.Visibility = kind == GameContentKind.ShaderPack ? Visibility.Visible : Visibility.Collapsed;
+
+        SetNavState(ModSubNavButton, kind == GameContentKind.Mod);
+        SetNavState(ResourcePackSubNavButton, kind == GameContentKind.ResourcePack);
+        SetNavState(ShaderPackSubNavButton, kind == GameContentKind.ShaderPack);
+    }
+
+    private async Task RefreshGameContentAsync()
+    {
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            _viewModel.ClearContentInventory("请选择一个已安装客户端。");
+            return;
+        }
+
+        try
+        {
+            var inventory = await _minecraftContentManager.GetInventoryAsync(selectedClient.Installation);
+            _viewModel.ApplyContentInventory(inventory);
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ClearContentInventory(ex.Message);
+        }
+    }
+
+    private void ContentDropZone_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void ResourcePackDrop_Drop(object sender, DragEventArgs e)
+    {
+        await InstallDroppedContentAsync(GameContentKind.ResourcePack, e);
+    }
+
+    private async void ShaderPackDrop_Drop(object sender, DragEventArgs e)
+    {
+        await InstallDroppedContentAsync(GameContentKind.ShaderPack, e);
+    }
+
+    private async void ModDrop_Drop(object sender, DragEventArgs e)
+    {
+        await InstallDroppedContentAsync(GameContentKind.Mod, e);
+    }
+
+    private async Task InstallDroppedContentAsync(GameContentKind kind, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop) ||
+            e.Data.GetData(DataFormats.FileDrop) is not string[] paths ||
+            paths.Length == 0)
+        {
+            return;
+        }
+
+        await InstallContentFilesAsync(kind, paths);
+    }
+
+    private async void InstallContentFromFile_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Multiselect = true,
+            Filter = _selectedContentKind switch
+            {
+                GameContentKind.Mod => "Minecraft Mod (*.jar)|*.jar",
+                _ => "Minecraft 资源包/光影包 (*.zip)|*.zip"
+            }
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        await InstallContentFilesAsync(_selectedContentKind, dialog.FileNames);
+    }
+
+    private async Task InstallContentFilesAsync(GameContentKind kind, IReadOnlyCollection<string> paths)
+    {
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            LauncherMessageBox.Show(this, "请先选择一个客户端。", "资源管理", LauncherMessageKind.Info);
+            return;
+        }
+
+        try
+        {
+            _viewModel.ContentStatusMessage = "正在安装拖入的文件...";
+            await _minecraftContentManager.InstallAsync(selectedClient.Installation, kind, paths);
+            await RefreshGameContentAsync();
+            LauncherMessageBox.Show(this, "安装完成。", "资源管理", LauncherMessageKind.Success);
+        }
+        catch (Exception ex)
+        {
+            await RefreshGameContentAsync();
+            LauncherMessageBox.Show(this, ex.Message, "安装失败", LauncherMessageKind.Warning);
+        }
+    }
+
+    private async void OpenContentFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            LauncherMessageBox.Show(this, "请先选择一个客户端。", "资源管理", LauncherMessageKind.Info);
+            return;
+        }
+
+        try
+        {
+            var inventory = await _minecraftContentManager.GetInventoryAsync(selectedClient.Installation);
+            var directory = _selectedContentKind switch
+            {
+                GameContentKind.ResourcePack => inventory.ResourcePacksDirectory,
+                GameContentKind.ShaderPack => inventory.ShaderPacksDirectory,
+                _ => inventory.ModsDirectory
+            };
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = directory,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            LauncherMessageBox.Show(this, ex.Message, "打开失败", LauncherMessageKind.Warning);
+        }
+    }
+
+    private async void ToggleContentItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: GameContentItemViewModel item })
+        {
+            return;
+        }
+
+        var selectedClient = _viewModel.SelectedClient;
+        if (selectedClient is null)
+        {
+            LauncherMessageBox.Show(this, "请先选择一个客户端。", "资源管理", LauncherMessageKind.Info);
+            return;
+        }
+
+        try
+        {
+            await _minecraftContentManager.SetEnabledAsync(
+                selectedClient.Installation,
+                item.Kind,
+                item.FileName,
+                !item.IsEnabled);
+            await RefreshGameContentAsync();
+        }
+        catch (Exception ex)
+        {
+            LauncherMessageBox.Show(this, ex.Message, "切换失败", LauncherMessageKind.Warning);
         }
     }
 
@@ -904,10 +1118,12 @@ public partial class MainWindow : Window
     {
         LaunchPage.Visibility = page == "launch" ? Visibility.Visible : Visibility.Collapsed;
         DownloadPage.Visibility = page == "download" ? Visibility.Visible : Visibility.Collapsed;
+        ContentPage.Visibility = page == "content" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
 
         SetNavState(LaunchNavButton, page == "launch");
         SetNavState(DownloadNavButton, page == "download");
+        SetNavState(ContentNavButton, page == "content");
         SetNavState(SettingsNavButton, page == "settings");
     }
 

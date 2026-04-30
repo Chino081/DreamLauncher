@@ -164,7 +164,7 @@ public sealed class MinecraftLaunchService
         var gameDirectory = GetVersionGameDirectory(versionJsonPath);
         var nativesDirectory = Path.Combine(minecraftDirectory, "natives", versionId, GetNativeRuntimeId());
         Directory.CreateDirectory(gameDirectory);
-        Directory.CreateDirectory(nativesDirectory);
+        ResetNativesDirectory(nativesDirectory);
         ExtractNativeLibraries(minecraftDirectory, root, nativesDirectory, cancellationToken);
 
         var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -306,8 +306,17 @@ public sealed class MinecraftLaunchService
                     continue;
                 }
 
+                var hasNativeClassifier = TryGetNativeClassifierFromLibraryName(library, out var nativeClassifier);
+                if (hasNativeClassifier &&
+                    !IsNativeClassifierCompatible(nativeClassifier!))
+                {
+                    continue;
+                }
+
                 var artifactPath = ReadNestedString(library, "downloads", "artifact", "path")
-                    ?? BuildLibraryPathFromName(library);
+                    ?? (hasNativeClassifier
+                        ? BuildLibraryPathFromName(library, nativeClassifier!)
+                        : BuildLibraryPathFromName(library));
 
                 if (artifactPath is null)
                 {
@@ -471,19 +480,37 @@ public sealed class MinecraftLaunchService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!IsAllowedByRules(library) ||
-                !TryResolveNativeLibraryPath(librariesDirectory, library, out var nativeLibraryPath))
+            if (!IsAllowedByRules(library))
+            {
+                continue;
+            }
+
+            var isNativeLibrary = TryResolveNativeLibraryPath(librariesDirectory, library, out var nativeLibraryPath) ||
+                                  TryResolveNativeArtifactLibraryPath(librariesDirectory, library, out nativeLibraryPath);
+            if (!isNativeLibrary)
             {
                 continue;
             }
 
             if (!File.Exists(nativeLibraryPath))
             {
-                throw new FileNotFoundException("缺少当前系统需要的 Minecraft natives 文件。", nativeLibraryPath);
+                throw new FileNotFoundException(
+                    $"缺少当前系统需要的 Minecraft natives 文件：{GetMinecraftOsName()} / {RuntimeInformation.ProcessArchitecture}",
+                    nativeLibraryPath);
             }
 
             ExtractNativeArchive(nativeLibraryPath, nativesDirectory, ReadNativeExtractExcludes(library), cancellationToken);
         }
+    }
+
+    private static void ResetNativesDirectory(string nativesDirectory)
+    {
+        if (Directory.Exists(nativesDirectory))
+        {
+            Directory.Delete(nativesDirectory, recursive: true);
+        }
+
+        Directory.CreateDirectory(nativesDirectory);
     }
 
     private static bool TryResolveNativeLibraryPath(
@@ -535,6 +562,116 @@ public sealed class MinecraftLaunchService
 
         nativeLibraryPath = Path.Combine(librariesDirectory, fallbackPath.Replace('/', Path.DirectorySeparatorChar));
         return true;
+    }
+
+    private static bool TryResolveNativeArtifactLibraryPath(
+        string librariesDirectory,
+        JsonElement library,
+        out string nativeLibraryPath)
+    {
+        nativeLibraryPath = "";
+
+        if (!TryGetNativeClassifierFromLibraryName(library, out var classifier) ||
+            string.IsNullOrWhiteSpace(classifier) ||
+            !IsNativeClassifierCompatible(classifier))
+        {
+            return false;
+        }
+
+        var path = ReadNestedString(library, "downloads", "artifact", "path")
+            ?? BuildLibraryPathFromName(library, classifier);
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        nativeLibraryPath = Path.Combine(librariesDirectory, path.Replace('/', Path.DirectorySeparatorChar));
+        return true;
+    }
+
+    private static bool TryGetNativeClassifierFromLibraryName(JsonElement library, out string? classifier)
+    {
+        classifier = null;
+        var name = ReadString(library, "name");
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        var parts = name.Split(':');
+        if (parts.Length < 4 ||
+            !parts[3].StartsWith("natives-", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        classifier = parts[3];
+        return true;
+    }
+
+    private static bool IsNativeClassifierCompatible(string classifier)
+    {
+        var value = classifier.ToLowerInvariant();
+        if (!value.StartsWith("natives-", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (value.Contains("windows", StringComparison.Ordinal))
+        {
+            return OperatingSystem.IsWindows() && IsNativeClassifierArchitectureCompatible(value);
+        }
+
+        if (value.Contains("linux", StringComparison.Ordinal))
+        {
+            return OperatingSystem.IsLinux() && IsNativeClassifierArchitectureCompatible(value);
+        }
+
+        if (value.Contains("macos", StringComparison.Ordinal) ||
+            value.Contains("osx", StringComparison.Ordinal))
+        {
+            return OperatingSystem.IsMacOS() && IsNativeClassifierArchitectureCompatible(value);
+        }
+
+        return false;
+    }
+
+    private static bool IsNativeClassifierArchitectureCompatible(string classifier)
+    {
+        var architecture = RuntimeInformation.ProcessArchitecture;
+        var hasExplicitArm64 = classifier.Contains("arm64", StringComparison.Ordinal) ||
+                               classifier.Contains("aarch64", StringComparison.Ordinal);
+        var hasExplicitX86 = classifier.Contains("x86", StringComparison.Ordinal) &&
+                             !classifier.Contains("x86_64", StringComparison.Ordinal);
+        var hasExplicitX64 = classifier.Contains("x86_64", StringComparison.Ordinal) ||
+                             classifier.Contains("amd64", StringComparison.Ordinal) ||
+                             classifier.EndsWith("-64", StringComparison.Ordinal);
+        var hasExplicitArm = classifier.EndsWith("-arm", StringComparison.Ordinal) ||
+                             classifier.Contains("-arm32", StringComparison.Ordinal);
+
+        if (hasExplicitArm64)
+        {
+            return architecture == Architecture.Arm64;
+        }
+
+        if (hasExplicitArm)
+        {
+            return architecture == Architecture.Arm;
+        }
+
+        if (hasExplicitX86)
+        {
+            return architecture == Architecture.X86;
+        }
+
+        if (hasExplicitX64)
+        {
+            return architecture == Architecture.X64;
+        }
+
+        // Minecraft/LWJGL native classifiers without an architecture suffix are x64 on modern manifests.
+        return architecture == Architecture.X64;
     }
 
     private static IEnumerable<string> BuildNativeClassifierCandidates(string classifierTemplate)

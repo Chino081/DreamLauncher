@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "version": "0.1.1",
+  "title": "启动器更新",
+  "notes": "修复启动问题并优化下载体验。",
+  "mandatory": false,
+  "windowsX64Url": "https://cdn.example.com/launcher/DreamLauncher-0.1.1-win-x64.zip",
+  "windowsX64Sha256": "填写真实SHA256",
+  "size": 52428800
+}

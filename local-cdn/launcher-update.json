@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "version": "0.1.0",
+  "title": "启动器更新",
+  "notes": "当前测试版本暂无更新。发布新版本时，把 version 改成更高版本，并填写真实 Windows x64 更新包地址、SHA256 和大小。",
+  "mandatory": false,
+  "windowsX64Url": "https://cdn.example.com/launcher/DreamLauncher-0.1.1-win-x64.zip",
+  "windowsX64Sha256": "填写真实SHA256",
+  "size": 0
+}

@@ -4,6 +4,7 @@ using DreamLauncher.Core.Serialization;
 using DreamLauncher.Models.Announcements;
 using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Java;
+using DreamLauncher.Models.Updates;
 
 namespace DreamLauncher.Core.Remote;
 
@@ -36,6 +37,13 @@ public sealed class RemoteConfigClient
         CancellationToken cancellationToken = default)
     {
         return GetJsonAsync<AnnouncementDocument>(url, cancellationToken);
+    }
+
+    public Task<LauncherUpdateManifest> GetLauncherUpdateManifestAsync(
+        string url,
+        CancellationToken cancellationToken = default)
+    {
+        return GetJsonAsync<LauncherUpdateManifest>(url, cancellationToken);
     }
 
     private async Task<T> GetJsonAsync<T>(string url, CancellationToken cancellationToken)

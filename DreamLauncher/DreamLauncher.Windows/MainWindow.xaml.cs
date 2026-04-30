@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.IO;
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -13,8 +15,10 @@ using DreamLauncher.Core.Downloads;
 using DreamLauncher.Core.Java;
 using DreamLauncher.Core.Minecraft;
 using DreamLauncher.Core.Remote;
+using DreamLauncher.Core.Updates;
 using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Config;
+using DreamLauncher.Models.Operations;
 using DreamLauncher.Windows.Accounts;
 using DreamLauncher.Windows.Dialogs;
 using DreamLauncher.Windows.Security;
@@ -30,6 +34,7 @@ public partial class MainWindow : Window
     private readonly LauncherConfigStore _configStore;
     private readonly AccountManager _accountManager;
     private readonly JavaRuntimeManager _javaRuntimeManager;
+    private readonly LauncherUpdateService _launcherUpdateService;
     private readonly MainWindowViewModel _viewModel;
     private CancellationTokenSource? _javaRuntimeRefreshCancellation;
     private bool _isUpdatingJavaRuntimeOptions;
@@ -57,6 +62,7 @@ public partial class MainWindow : Window
         var clientManager = new ClientManager(_paths, downloadService, extractor);
         _javaRuntimeManager = new JavaRuntimeManager(_paths, downloadService, extractor);
         var minecraftLaunchService = new MinecraftLaunchService(_paths);
+        _launcherUpdateService = new LauncherUpdateService(_paths, remoteConfigClient, downloadService);
 
         _viewModel = new MainWindowViewModel(
             _configStore,
@@ -90,6 +96,171 @@ public partial class MainWindow : Window
         await _viewModel.InitializeAsync();
         await LoadInlineSettingsAsync();
         ShowPage("launch");
+        await CheckLauncherUpdateAsync();
+    }
+
+    private async Task CheckLauncherUpdateAsync()
+    {
+        var userAcceptedUpdate = false;
+        var previousStatusMessage = _viewModel.StatusMessage;
+
+        try
+        {
+            var currentVersion = GetCurrentLauncherVersion();
+            var update = await _launcherUpdateService.CheckAsync(currentVersion);
+            if (update is null)
+            {
+                return;
+            }
+
+            var manifest = update.Manifest;
+            var notes = string.IsNullOrWhiteSpace(manifest.Notes)
+                ? "发现新的启动器版本。"
+                : manifest.Notes.Trim();
+            var title = string.IsNullOrWhiteSpace(manifest.Title)
+                ? "启动器更新"
+                : manifest.Title.Trim();
+            var message = manifest.Mandatory
+                ? $"发现启动器新版本 {manifest.Version}，当前版本 {update.CurrentVersion}。\n\n{notes}\n\n这是必要更新，点击确定后会下载并安装。"
+                : $"发现启动器新版本 {manifest.Version}，当前版本 {update.CurrentVersion}。\n\n{notes}\n\n是否现在更新？";
+
+            var shouldUpdate = LauncherMessageBox.Show(
+                this,
+                message,
+                title,
+                LauncherMessageKind.Info,
+                showCancel: !manifest.Mandatory);
+            if (!shouldUpdate)
+            {
+                _viewModel.StatusMessage = "已跳过启动器更新";
+                return;
+            }
+
+            userAcceptedUpdate = true;
+            var config = await _configStore.LoadAsync();
+            _viewModel.StatusMessage = "正在下载启动器更新";
+            var packagePath = await _launcherUpdateService.DownloadWindowsPackageAsync(
+                update,
+                config.Download.MaxRetryCount,
+                CreateLauncherUpdateProgressReporter(),
+                CancellationToken.None);
+
+            LauncherMessageBox.Show(
+                this,
+                "更新包已下载并校验完成。启动器将关闭，替换完成后会自动重新打开。",
+                "启动器更新",
+                LauncherMessageKind.Success);
+
+            await _launcherUpdateService.StartWindowsApplyAndRestartAsync(
+                packagePath,
+                _paths.ProgramDirectory,
+                GetExecutablePath(),
+                Environment.ProcessId);
+
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            _viewModel.HasProgress = false;
+            _viewModel.StatusMessage = userAcceptedUpdate
+                ? $"启动器更新失败：{ex.Message}"
+                : previousStatusMessage;
+
+            if (userAcceptedUpdate)
+            {
+                LauncherMessageBox.Show(
+                    this,
+                    ex.Message,
+                    "启动器更新失败",
+                    LauncherMessageKind.Warning);
+            }
+        }
+    }
+
+    private IProgress<LauncherOperationProgress> CreateLauncherUpdateProgressReporter()
+    {
+        return new Progress<LauncherOperationProgress>(progress =>
+        {
+            _viewModel.HasProgress = true;
+            _viewModel.ProgressValue = string.Equals(progress.Stage, "verify", StringComparison.OrdinalIgnoreCase)
+                ? 100
+                : progress.Progress.HasValue
+                ? Math.Clamp(progress.Progress.Value * 100, 0, 100)
+                : 0;
+            _viewModel.OperationText = FormatLauncherUpdateProgress(progress);
+        });
+    }
+
+    private static string FormatLauncherUpdateProgress(LauncherOperationProgress progress)
+    {
+        var text = progress.Stage switch
+        {
+            "verify" => "正在校验启动器更新",
+            _ => "正在下载启动器更新"
+        };
+
+        if (progress.BytesCompleted.HasValue && progress.TotalBytes.HasValue)
+        {
+            text += $"  {FormatUpdateBytes(progress.BytesCompleted.Value)} / {FormatUpdateBytes(progress.TotalBytes.Value)}";
+        }
+
+        if (progress.SpeedBytesPerSecond.HasValue)
+        {
+            text += $"  {FormatUpdateBytes((long)progress.SpeedBytesPerSecond.Value)}/s";
+        }
+
+        if (progress.EstimatedRemaining.HasValue)
+        {
+            text += $"  剩余 {progress.EstimatedRemaining.Value:mm\\:ss}";
+        }
+
+        return text;
+    }
+
+    private static string FormatUpdateBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB"];
+        var value = (double)bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.##} {units[unit]}";
+    }
+
+    private static string GetCurrentLauncherVersion()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return informationalVersion.Split('+', 2)[0];
+        }
+
+        return assembly.GetName().Version?.ToString(fieldCount: 3) ?? "0.1.0";
+    }
+
+    private static string GetExecutablePath()
+    {
+        var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
+        if (!string.IsNullOrWhiteSpace(entryAssemblyPath))
+        {
+            var appHostPath = Path.ChangeExtension(entryAssemblyPath, ".exe");
+            if (File.Exists(appHostPath))
+            {
+                return appHostPath;
+            }
+        }
+
+        return Environment.ProcessPath
+            ?? Process.GetCurrentProcess().MainModule?.FileName
+            ?? throw new InvalidOperationException("无法获取当前启动器路径。");
     }
 
     private void LaunchNav_Click(object sender, RoutedEventArgs e)

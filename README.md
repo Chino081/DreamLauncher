@@ -29,6 +29,7 @@ DreamLauncherNew/
     clients.json
     java-runtimes.json
     announcement.json
+    launcher-update.json
   docs/
     samples/
   DreamLauncher/
@@ -85,7 +86,11 @@ DreamLauncherNew/
 https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/clients.json
 https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/java-runtimes.json
 https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/announcement.json
+https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/launcher-update.json
 ```
+
+Windows 版启动后会自动检查 `launcher-update.json`。远程 `version` 高于当前启动器版本时会提示下载；更新包下载完成后校验 SHA256，然后在启动器退出后替换文件并自动重新打开。
+
 
 即使本地 `config.json` 中写了其他地址，读取或保存配置时也会自动修正回上面的固定地址。
 

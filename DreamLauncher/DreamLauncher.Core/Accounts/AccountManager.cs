@@ -101,23 +101,43 @@ public sealed class AccountManager
             return account;
         }
 
-        var tokens = await _tokenStore.ReadAsync(accountId, cancellationToken)
-            ?? throw new InvalidOperationException("账号令牌不存在，请重新登录。");
+        if (account.Status == AccountLoginStatus.Invalid)
+        {
+            return account;
+        }
+
+        var tokens = await _tokenStore.ReadAsync(accountId, cancellationToken);
+        if (tokens is null)
+        {
+            account.Status = AccountLoginStatus.Invalid;
+            await _accountProfileStore.SaveAsync(document, cancellationToken);
+            return account;
+        }
 
         if (IsThirdPartyAccount(account))
         {
-            var result = await _thirdPartyAuthService.RefreshAsync(
-                new ThirdPartyRefreshInput
-                {
-                    Account = account,
-                    Tokens = tokens
-                },
-                cancellationToken);
+            try
+            {
+                var result = await _thirdPartyAuthService.RefreshAsync(
+                    new ThirdPartyRefreshInput
+                    {
+                        Account = account,
+                        Tokens = tokens
+                    },
+                    cancellationToken);
 
-            await _tokenStore.SaveAsync(result.Account.Id, result.Tokens, cancellationToken);
-            UpsertAccount(document, result.Account);
-            await _accountProfileStore.SaveAsync(document, cancellationToken);
-            return result.Account;
+                await _tokenStore.SaveAsync(result.Account.Id, result.Tokens, cancellationToken);
+                UpsertAccount(document, result.Account);
+                await _accountProfileStore.SaveAsync(document, cancellationToken);
+                return result.Account;
+            }
+            catch
+            {
+                account.Status = AccountLoginStatus.Invalid;
+                await _tokenStore.DeleteAsync(accountId, cancellationToken);
+                await _accountProfileStore.SaveAsync(document, cancellationToken);
+                return account;
+            }
         }
 
         if (tokens.ExpiresAtUtc > DateTimeOffset.UtcNow.AddMinutes(5))
@@ -127,20 +147,30 @@ public sealed class AccountManager
             return account;
         }
 
-        var refreshed = await _authService.RefreshAsync(
-            DefaultMicrosoftClientId,
-            new MicrosoftRefreshInput { RefreshToken = tokens.MicrosoftRefreshToken },
-            cancellationToken);
-        await _tokenStore.SaveAsync(refreshed.Account.Id, refreshed.Tokens, cancellationToken);
-
-        UpsertAccount(document, refreshed.Account);
-        if (document.DefaultAccountId == accountId)
+        try
         {
-            document.DefaultAccountId = refreshed.Account.Id;
-        }
+            var refreshed = await _authService.RefreshAsync(
+                DefaultMicrosoftClientId,
+                new MicrosoftRefreshInput { RefreshToken = tokens.MicrosoftRefreshToken },
+                cancellationToken);
+            await _tokenStore.SaveAsync(refreshed.Account.Id, refreshed.Tokens, cancellationToken);
 
-        await _accountProfileStore.SaveAsync(document, cancellationToken);
-        return refreshed.Account;
+            UpsertAccount(document, refreshed.Account);
+            if (document.DefaultAccountId == accountId)
+            {
+                document.DefaultAccountId = refreshed.Account.Id;
+            }
+
+            await _accountProfileStore.SaveAsync(document, cancellationToken);
+            return refreshed.Account;
+        }
+        catch
+        {
+            account.Status = AccountLoginStatus.Invalid;
+            await _tokenStore.DeleteAsync(accountId, cancellationToken);
+            await _accountProfileStore.SaveAsync(document, cancellationToken);
+            return account;
+        }
     }
 
     public async Task SetDefaultAccountAsync(string accountId, CancellationToken cancellationToken = default)

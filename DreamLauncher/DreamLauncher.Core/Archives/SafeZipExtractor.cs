@@ -37,6 +37,9 @@ public sealed class SafeZipExtractor
             var targetPath = GetSafeEntryPath(destinationRoot, entry.FullName);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
 
+            var entryLength = Math.Max(1L, entry.Length);
+            long entryRead = 0;
+
             await using var source = entry.Open();
             await using var target = new FileStream(
                 targetPath,
@@ -57,12 +60,18 @@ public sealed class SafeZipExtractor
 
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 completedBytes += read;
+                entryRead += read;
+
+                var entryFraction = Math.Min(1.0, (double)entryRead / entryLength);
+                double? fileProgress = entries.Length == 0
+                    ? null
+                    : (double)(completedEntries + entryFraction) / entries.Length;
 
                 progress?.Report(new LauncherOperationProgress
                 {
                     Stage = "extract",
-                    Message = $"正在解压 {entry.FullName}",
-                    Progress = totalBytes == 0 ? null : (double)completedBytes / totalBytes,
+                    Message = $"正在解压 {completedEntries + 1}/{entries.Length} 个文件",
+                    Progress = fileProgress,
                     BytesCompleted = completedBytes,
                     TotalBytes = totalBytes
                 });
@@ -123,6 +132,9 @@ public sealed class SafeZipExtractor
             var targetPath = GetSafeEntryPath(destinationRoot, item.RelativePath!);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
 
+            var entryLength = Math.Max(1L, item.Entry.Length);
+            long entryRead = 0;
+
             await using var source = item.Entry.Open();
             await using var target = new FileStream(
                 targetPath,
@@ -143,12 +155,18 @@ public sealed class SafeZipExtractor
 
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 completedBytes += read;
+                entryRead += read;
+
+                var entryFraction = Math.Min(1.0, (double)entryRead / entryLength);
+                double? fileProgress = entries.Length == 0
+                    ? null
+                    : (double)(completedEntries + entryFraction) / entries.Length;
 
                 progress?.Report(new LauncherOperationProgress
                 {
                     Stage = "extract",
-                    Message = $"正在解压 .minecraft/{item.RelativePath}",
-                    Progress = totalBytes == 0 ? null : (double)completedBytes / totalBytes,
+                    Message = $"正在解压 {completedEntries + 1}/{entries.Length} 个文件",
+                    Progress = fileProgress,
                     BytesCompleted = completedBytes,
                     TotalBytes = totalBytes
                 });

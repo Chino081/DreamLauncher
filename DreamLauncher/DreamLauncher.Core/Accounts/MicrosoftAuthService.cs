@@ -150,9 +150,13 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         });
 
         using var response = await _httpClient.PostAsync("https://login.live.com/oauth20_token.srf", request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw CreateServiceException("Microsoft 授权码换取令牌失败", response, body);
+        }
+
+        using var document = JsonDocument.Parse(body);
 
         return ReadMicrosoftTokens(document.RootElement);
     }
@@ -171,9 +175,13 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         });
 
         using var response = await _httpClient.PostAsync(TokenUrl, request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw CreateServiceException("Microsoft 刷新令牌失败，请重新登录", response, body);
+        }
+
+        using var document = JsonDocument.Parse(body);
 
         return ReadMicrosoftTokens(document.RootElement);
     }
@@ -391,10 +399,13 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         request.Headers.Authorization = new("Bearer", minecraftAccessToken);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw CreateServiceException("获取 Minecraft 玩家档案失败", response, body);
+        }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
 
         return new MinecraftProfileResult(

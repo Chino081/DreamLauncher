@@ -168,13 +168,19 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public string CurrentAccountStatusText => CurrentAccount is null
         ? "请添加账号"
-        : AccountManager.IsOfflineAccount(CurrentAccount)
-            ? "离线账号"
-            : AccountManager.IsThirdPartyAccount(CurrentAccount)
-                ? "第三方账号"
-                : "Microsoft 正版账号";
+        : CurrentAccount.Status == AccountLoginStatus.Invalid
+            ? "需要重新登录"
+            : AccountManager.IsOfflineAccount(CurrentAccount)
+                ? "离线账号"
+                : AccountManager.IsThirdPartyAccount(CurrentAccount)
+                    ? "第三方账号"
+                    : "Microsoft 正版账号";
 
-    public string CurrentAccountOnlineText => CurrentAccount is null ? "状态：未登录" : "状态：在线";
+    public string CurrentAccountOnlineText => CurrentAccount is null
+        ? "状态：未登录"
+        : CurrentAccount.Status == AccountLoginStatus.Invalid
+            ? "状态：已失效"
+            : "状态：在线";
 
     public string StatusMessage
     {
@@ -571,6 +577,11 @@ public sealed class MainWindowViewModel : ObservableObject
             var account = CurrentAccount ?? throw new InvalidOperationException("请先添加账号。");
             account = await _accountManager.RefreshAccountAsync(account.Id, cancellationToken);
             CurrentAccount = account;
+
+            if (account.Status == AccountLoginStatus.Invalid)
+            {
+                throw new InvalidOperationException("账号已失效，请删除后重新登录。");
+            }
 
             var tokens = AccountManager.IsOfflineAccount(account)
                 ? AccountManager.CreateOfflineTokens(account)

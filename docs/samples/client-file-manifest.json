@@ -1,0 +1,21 @@
+{
+  "id": "survival",
+  "version": "1.0.1",
+  "baseUrl": "https://cdn.example.com/packs/survival/files/",
+  "files": [
+    {
+      "path": ".minecraft/versions/26.1.2-Fabric_0.19.1/26.1.2-Fabric_0.19.1.json",
+      "sha256": "填写真实 SHA256",
+      "size": 12345
+    },
+    {
+      "path": ".minecraft/mods/fabric-api.jar",
+      "url": "https://cdn.example.com/packs/survival/files/.minecraft/mods/fabric-api.jar",
+      "sha256": "填写真实 SHA256",
+      "size": 456789
+    }
+  ],
+  "delete": [
+    ".minecraft/mods/old-mod.jar"
+  ]
+}

@@ -32,6 +32,8 @@ public sealed class ClientDefinition
 
     public long PackSize { get; set; }
 
+    public string ManifestUrl { get; set; } = "";
+
     public string InstallDir { get; set; } = "";
 
     public string CoverUrl { get; set; } = "";

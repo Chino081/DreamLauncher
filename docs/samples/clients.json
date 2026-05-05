@@ -19,6 +19,7 @@
       "packUrl": "https://cdn.example.com/packs/survival-1.0.0.zip",
       "packSha256": "填写SHA256",
       "packSize": 2147483648,
+      "manifestUrl": "https://cdn.example.com/packs/survival/manifest.json",
       "installDir": "survival",
       "coverUrl": "https://cdn.example.com/images/survival-cover.jpg",
       "iconUrl": "https://cdn.example.com/images/survival-icon.png",

@@ -46,6 +46,13 @@ public sealed class RemoteConfigClient
         return GetJsonAsync<LauncherUpdateManifest>(url, cancellationToken);
     }
 
+    public Task<ClientFileManifest> GetClientFileManifestAsync(
+        string url,
+        CancellationToken cancellationToken = default)
+    {
+        return GetJsonAsync<ClientFileManifest>(url, cancellationToken);
+    }
+
     private async Task<T> GetJsonAsync<T>(string url, CancellationToken cancellationToken)
     {
         await using var stream = await OpenConfigStreamAsync(url, cancellationToken);

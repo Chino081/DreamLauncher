@@ -39,22 +39,38 @@ public sealed class ThirdPartyAuthService : IThirdPartyAuthService
             }
         };
 
-        using var response = await _httpClient.PostAsJsonAsync(
-            new Uri(apiRoot, "authserver/authenticate"),
-            payload,
-            cancellationToken);
-
-        if (response.StatusCode == HttpStatusCode.Forbidden ||
-            response.StatusCode == HttpStatusCode.Unauthorized)
+        HttpResponseMessage response;
+        try
         {
-            throw new InvalidOperationException("皮肤站账号或密码不正确。");
+            response = await _httpClient.PostAsJsonAsync(
+                new Uri(apiRoot, "authserver/authenticate"),
+                payload,
+                cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException($"皮肤站登录失败，无法连接到服务器：{ex.Message}", ex);
         }
 
-        response.EnsureSuccessStatusCode();
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        return CreateResult(apiRoot, metadata, document.RootElement);
+            if (response.StatusCode == HttpStatusCode.Forbidden ||
+                response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                throw new InvalidOperationException("皮肤站账号或密码不正确。");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var status = $"HTTP {(int)response.StatusCode}".Trim();
+                throw new InvalidOperationException($"皮肤站登录失败（{status}）。");
+            }
+
+            using var document = JsonDocument.Parse(body);
+            return CreateResult(apiRoot, metadata, document.RootElement);
+        }
     }
 
     public async Task<ThirdPartyAuthResult> RefreshAsync(
@@ -87,26 +103,42 @@ public sealed class ThirdPartyAuthService : IThirdPartyAuthService
             requestUser = true
         };
 
-        using var response = await _httpClient.PostAsJsonAsync(
-            new Uri(apiRoot, "authserver/refresh"),
-            payload,
-            cancellationToken);
-
-        if (response.StatusCode == HttpStatusCode.Forbidden ||
-            response.StatusCode == HttpStatusCode.Unauthorized)
+        HttpResponseMessage response;
+        try
         {
-            throw new InvalidOperationException("皮肤站登录已过期，请重新登录。");
+            response = await _httpClient.PostAsJsonAsync(
+                new Uri(apiRoot, "authserver/refresh"),
+                payload,
+                cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException($"皮肤站刷新令牌失败，无法连接到服务器：{ex.Message}", ex);
         }
 
-        response.EnsureSuccessStatusCode();
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        var metadata = new AuthServerMetadata(
-            input.Account.AuthServerName ?? new Uri(apiRoot.ToString()).Host,
-            input.Account.AuthServerMetadataBase64 ?? "");
+            if (response.StatusCode == HttpStatusCode.Forbidden ||
+                response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                throw new InvalidOperationException("皮肤站登录已过期，请重新登录。");
+            }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        return CreateResult(apiRoot, metadata, document.RootElement);
+            if (!response.IsSuccessStatusCode)
+            {
+                var status = $"HTTP {(int)response.StatusCode}".Trim();
+                throw new InvalidOperationException($"皮肤站刷新令牌失败（{status}），请重新登录。");
+            }
+
+            var metadata = new AuthServerMetadata(
+                input.Account.AuthServerName ?? new Uri(apiRoot.ToString()).Host,
+                input.Account.AuthServerMetadataBase64 ?? "");
+
+            using var document = JsonDocument.Parse(body);
+            return CreateResult(apiRoot, metadata, document.RootElement);
+        }
     }
 
     private async Task<bool> ValidateAsync(
@@ -125,46 +157,70 @@ public sealed class ThirdPartyAuthService : IThirdPartyAuthService
             clientToken = tokens.ClientToken
         };
 
-        using var response = await _httpClient.PostAsJsonAsync(
-            new Uri(apiRoot, "authserver/validate"),
-            payload,
-            cancellationToken);
+        try
+        {
+            using var response = await _httpClient.PostAsJsonAsync(
+                new Uri(apiRoot, "authserver/validate"),
+                payload,
+                cancellationToken);
 
-        return response.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.OK;
+            return response.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.OK;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task<AuthServerMetadata> GetMetadataAsync(
         Uri apiRoot,
         CancellationToken cancellationToken)
     {
-        using var response = await _httpClient.GetAsync(apiRoot, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            throw new InvalidOperationException("皮肤站认证服务器没有返回元数据。");
-        }
-
-        var serverName = apiRoot.Host;
+        HttpResponseMessage response;
         try
         {
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.TryGetProperty("meta", out var meta) &&
-                meta.TryGetProperty("serverName", out var name) &&
-                name.GetString() is { Length: > 0 } text)
-            {
-                serverName = text;
-            }
+            response = await _httpClient.GetAsync(apiRoot, cancellationToken);
         }
-        catch (JsonException)
+        catch (HttpRequestException ex)
         {
-            throw new InvalidOperationException("皮肤站认证服务器元数据格式无效。");
+            throw new InvalidOperationException($"无法连接到皮肤站服务器：{ex.Message}", ex);
         }
 
-        return new AuthServerMetadata(
-            serverName,
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(json)));
+        using (response)
+        {
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var host = apiRoot.Host;
+                throw new InvalidOperationException($"皮肤站认证服务器返回错误（HTTP {(int)response.StatusCode}）：{host}");
+            }
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                throw new InvalidOperationException("皮肤站认证服务器没有返回元数据。");
+            }
+
+            var serverName = apiRoot.Host;
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.TryGetProperty("meta", out var meta) &&
+                    meta.TryGetProperty("serverName", out var name) &&
+                    name.GetString() is { Length: > 0 } text)
+                {
+                    serverName = text;
+                }
+            }
+            catch (JsonException)
+            {
+                throw new InvalidOperationException("皮肤站认证服务器元数据格式无效。");
+            }
+
+            return new AuthServerMetadata(
+                serverName,
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(json)));
+        }
     }
 
     private static ThirdPartyAuthResult CreateResult(

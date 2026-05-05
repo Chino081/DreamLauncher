@@ -110,6 +110,8 @@ https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/launc
 - 校验失败会删除损坏缓存并允许重试。
 - 解压时只合并压缩包中 `.minecraft` 的内容，不删除原本 `.minecraft`。
 - 下载/解压完成后清理缓存文件。
+- 更新策略为混合模式：主版本变化走完整包下载 + 合并覆盖；主版本不变且配置了 `manifestUrl` 时走 manifest 文件级更新。
+- 如果没有配置 `manifestUrl`，小版本更新也会回退到完整包更新。
 
 ### Java
 
@@ -210,6 +212,7 @@ Windows 与 Avalonia 都已接入资源页。
       "packUrl": "https://cdn.example.com/packs/survival-1.0.0.zip",
       "packSha256": "填写真实 SHA256",
       "packSize": 514448849,
+      "manifestUrl": "https://cdn.example.com/packs/survival/manifest.json",
       "installDir": "survival",
       "coverUrl": "",
       "iconUrl": "",
@@ -257,6 +260,34 @@ Windows 与 Avalonia 都已接入资源页。
 }
 ```
 
+### client-file-manifest.json
+
+小版本更新使用该清单。`path` 必须位于 `.minecraft` 内；每个文件都必须提供 `sha256` 和 `size`。文件下载地址优先使用单个文件的 `url`，没有 `url` 时会用 `baseUrl + path`。
+
+```json
+{
+  "id": "survival",
+  "version": "1.0.1",
+  "baseUrl": "https://cdn.example.com/packs/survival/files/",
+  "files": [
+    {
+      "path": ".minecraft/versions/26.1.2-Fabric_0.19.1/26.1.2-Fabric_0.19.1.json",
+      "sha256": "填写真实 SHA256",
+      "size": 12345
+    },
+    {
+      "path": ".minecraft/mods/fabric-api.jar",
+      "url": "https://cdn.example.com/packs/survival/files/.minecraft/mods/fabric-api.jar",
+      "sha256": "填写真实 SHA256",
+      "size": 456789
+    }
+  ],
+  "delete": [
+    ".minecraft/mods/old-mod.jar"
+  ]
+}
+```
+
 ### launcher-update.json
 
 ```json
@@ -291,6 +322,7 @@ Windows 与 Avalonia 都已接入资源页。
 | `packUrl` | 完整客户端压缩包地址，必须使用 HTTPS |
 | `packSha256` | 压缩包 SHA256 |
 | `packSize` | 压缩包大小，单位字节 |
+| `manifestUrl` | 小版本文件级更新清单地址，必须使用 HTTPS，留空则回退完整包 |
 | `installDir` | 客户端安装目录名 |
 | `coverUrl` | 封面图地址，预留 |
 | `iconUrl` | 图标地址，预留 |
@@ -362,7 +394,7 @@ dotnet publish .\DreamLauncher\DreamLauncher.Avalonia\DreamLauncher.Avalonia.csp
 
 ## 后续计划
 
-- 文件级 manifest 增量更新。
+- manifest 更新的断点续传和并发下载。
 - 更多平台 Java Runtime 配置。
 - 服务器在线人数显示。
 - 玩家皮肤 3D 预览。

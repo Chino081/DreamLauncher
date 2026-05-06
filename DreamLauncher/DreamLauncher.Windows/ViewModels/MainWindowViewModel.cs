@@ -221,8 +221,10 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             case ClientInstallStatus.NotInstalled:
             case ClientInstallStatus.UpdateRequired:
-            case ClientInstallStatus.VerificationFailed:
                 await InstallSelectedClientAsync(SelectedClient);
+                break;
+            case ClientInstallStatus.VerificationFailed:
+                await RepairSelectedClientAsync(SelectedClient);
                 break;
             case ClientInstallStatus.Ready:
             case ClientInstallStatus.JavaMissing:
@@ -243,6 +245,21 @@ public sealed class MainWindowViewModel : ObservableObject
             await _clientManager.InstallOrUpdateAsync(selectedClient.Installation.Definition, config, progress, cancellationToken);
             selectedClient.SetStatus(ClientInstallStatus.Ready);
             StatusMessage = $"{selectedClient.Name} 已就绪";
+        });
+    }
+
+    private async Task RepairSelectedClientAsync(ClientInstallationViewModel selectedClient)
+    {
+        await RunGuardedAsync(async cancellationToken =>
+        {
+            var config = await _configStore.LoadAsync(cancellationToken);
+            selectedClient.SetStatus(ClientInstallStatus.Downloading);
+            StatusMessage = $"\u6b63\u5728\u4fee\u590d {selectedClient.Name}";
+
+            var progress = CreateProgressReporter(selectedClient);
+            await _clientManager.RepairAsync(selectedClient.Installation.Definition, config, progress, cancellationToken);
+            selectedClient.SetStatus(ClientInstallStatus.Ready);
+            StatusMessage = $"{selectedClient.Name} \u4fee\u590d\u5b8c\u6210";
         });
     }
 

@@ -13,6 +13,29 @@ namespace DreamLauncher.Core.Clients;
 
 public sealed class ClientManager
 {
+    private static readonly string[] ProtectedClientSettingDirectories =
+    [
+        "config",
+        "saves",
+        "screenshots",
+        "logs",
+        "crash-reports",
+        "voxelmap"
+    ];
+
+    private static readonly string[] ProtectedClientSettingFiles =
+    [
+        "options.txt",
+        "optionsof.txt",
+        "optionsshaders.txt",
+        "servers.dat",
+        "servers.dat_old",
+        "realms_persistence.json",
+        "usercache.json",
+        "usernamecache.json",
+        "launcher_profiles.json"
+    ];
+
     private readonly LauncherPaths _paths;
     private readonly HttpDownloadService _downloadService;
     private readonly SafeZipExtractor _extractor;
@@ -255,6 +278,12 @@ public sealed class ClientManager
                 TotalBytes = totalBytes
             });
 
+            if (ShouldPreserveExistingClientFile(item.NormalizedPath, item.TargetPath))
+            {
+                completedBytes += Math.Max(0, item.Entry.Size);
+                continue;
+            }
+
             if (await NeedsDownloadAsync(item, cancellationToken))
             {
                 filesToDownload.Add(item);
@@ -312,6 +341,11 @@ public sealed class ClientManager
         {
             cancellationToken.ThrowIfCancellationRequested();
             var targetPath = downloaded.Item.TargetPath;
+            if (ShouldPreserveExistingClientFile(downloaded.Item.NormalizedPath, targetPath))
+            {
+                continue;
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.Copy(downloaded.CachePath, targetPath, overwrite: true);
         }
@@ -320,7 +354,7 @@ public sealed class ClientManager
         {
             cancellationToken.ThrowIfCancellationRequested();
             var targetPath = GetManifestTargetPath(deletePath);
-            if (File.Exists(targetPath))
+            if (File.Exists(targetPath) && !ShouldPreserveExistingClientFile(deletePath, targetPath))
             {
                 File.Delete(targetPath);
             }
@@ -782,9 +816,85 @@ public sealed class ClientManager
 
             var relativePath = Path.GetRelativePath(sourceDirectory, file);
             var destinationPath = Path.Combine(destinationDirectory, relativePath);
+            if (ShouldPreserveExistingClientFile(relativePath, destinationPath))
+            {
+                continue;
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
             File.Copy(file, destinationPath, overwrite: true);
         }
+    }
+
+    private static bool ShouldPreserveExistingClientFile(string relativePath, string destinationPath)
+    {
+        return File.Exists(destinationPath) && IsProtectedClientSettingPath(relativePath);
+    }
+
+    private static bool IsProtectedClientSettingPath(string relativePath)
+    {
+        var normalized = NormalizeClientContentPath(relativePath);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return false;
+        }
+
+        var scopedParts = GetClientSettingScopeParts(parts);
+        if (scopedParts.Length == 0)
+        {
+            return false;
+        }
+
+        if (ProtectedClientSettingDirectories.Contains(scopedParts[0], StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (scopedParts.Length != 1)
+        {
+            return false;
+        }
+
+        var fileName = scopedParts[0];
+        if (ProtectedClientSettingFiles.Contains(fileName, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return fileName.StartsWith("options", StringComparison.OrdinalIgnoreCase) &&
+               fileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string[] GetClientSettingScopeParts(string[] parts)
+    {
+        if (parts.Length >= 3 &&
+            string.Equals(parts[0], "versions", StringComparison.OrdinalIgnoreCase))
+        {
+            return parts[2..];
+        }
+
+        return parts;
+    }
+
+    private static string NormalizeClientContentPath(string relativePath)
+    {
+        var normalized = relativePath
+            .Replace('\\', '/')
+            .Trim('/');
+
+        const string minecraftPrefix = ".minecraft/";
+        if (normalized.StartsWith(minecraftPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[minecraftPrefix.Length..];
+        }
+
+        return normalized;
     }
 
     private sealed record ManifestDownloadItem(

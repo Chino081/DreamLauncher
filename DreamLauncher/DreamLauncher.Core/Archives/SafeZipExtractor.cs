@@ -246,33 +246,9 @@ public sealed class SafeZipExtractor
 
     private static ZipArchive OpenReadArchive(string archivePath)
     {
-        var archive = ZipFile.OpenRead(archivePath);
-        if (!ArchiveLooksMojibake(archive))
-        {
-            return archive;
-        }
-
-        archive.Dispose();
+        // Many Chinese ZIP tools store non-UTF-8 entry names as GBK/GB18030.
+        // ZipArchive still respects the UTF-8 flag, so UTF-8 archives remain safe.
         return ZipFile.Open(archivePath, ZipArchiveMode.Read, ChineseZipEncoding.Value);
-    }
-
-    private static bool ArchiveLooksMojibake(ZipArchive archive)
-    {
-        foreach (var entryName in archive.Entries.Take(128).Select(entry => entry.FullName))
-        {
-            if (entryName.Contains('\uFFFD', StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            var boxDrawingCount = entryName.Count(ch => ch is >= '\u2500' and <= '\u257F');
-            if (boxDrawingCount >= 2)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static Encoding CreateChineseZipEncoding()

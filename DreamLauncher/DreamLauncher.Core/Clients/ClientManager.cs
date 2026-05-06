@@ -716,13 +716,13 @@ public sealed class ClientManager
         if (Version.TryParse(remoteVersion, out var remote) &&
             Version.TryParse(localVersion, out var local))
         {
-            return remote.Major != local.Major;
+            return remote.Major != local.Major || remote.Minor != local.Minor;
         }
 
-        return !string.Equals(GetVersionHead(remoteVersion), GetVersionHead(localVersion), StringComparison.OrdinalIgnoreCase);
+        return !string.Equals(GetVersionBand(remoteVersion), GetVersionBand(localVersion), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetVersionHead(string version)
+    private static string GetVersionBand(string version)
     {
         var value = (version ?? "").Trim();
         if (value.Length == 0)
@@ -731,8 +731,14 @@ public sealed class ClientManager
         }
 
         var separators = new[] { '.', '-', '_', '+' };
-        var index = value.IndexOfAny(separators);
-        return index < 0 ? value : value[..index];
+        var first = value.IndexOfAny(separators);
+        if (first < 0)
+        {
+            return value;
+        }
+
+        var second = value.IndexOfAny(separators, first + 1);
+        return second < 0 ? value : value[..second];
     }
 
     private static string SanitizeFileName(string value)

@@ -110,7 +110,7 @@ https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/launc
 - 校验失败会删除损坏缓存并允许重试。
 - 解压时只合并压缩包中 `.minecraft` 的内容，不删除原本 `.minecraft`。
 - 下载/解压完成后清理缓存文件。
-- 更新策略为混合模式：主版本变化走完整包下载 + 合并覆盖；主版本不变且配置了 `manifestUrl` 时走 manifest 文件级更新。
+- 更新策略为混合模式：`major.minor` 变化走完整包下载 + 合并覆盖；只有补丁位变化且配置了 `manifestUrl` 时走 manifest 文件级更新。
 - 如果没有配置 `manifestUrl`，小版本更新也会回退到完整包更新。
 
 ### Java

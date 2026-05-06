@@ -24,28 +24,6 @@
       "iconUrl": "",
       "manifestUrl": "",
       "enabled": true
-    },
-    {
-      "id": "mozu",
-      "name": "模组服",
-      "description": "客户端测试用",
-      "version": "1.0.1",
-      "minecraftVersion": "1.21.1-NeoForge",
-      "loader": "NeoForge",
-      "loaderVersion": "21.1.228",
-      "javaVersion": 21,
-      "serverAddress": "play.mcdtc.com",
-      "defaultMemoryMb": 4096,
-      "jvmArgs": "-XX:+UseG1GC",
-      "gameArgs": "",
-      "packUrl": "https://alist.mcdtc.com/d/DreamTamrac/%E6%A8%A1%E7%BB%84%E6%9C%8D%E6%B5%8B%E8%AF%95.zip?sign=VkEIIZm09Dt_zytFG9r45dSoGJA7gaf2k-jg48ElJnE=:0",
-      "packSha256": "62eaa0f55caac401363642f7df4cedeb7849d481b1cc0a7b8c02b3a5c6ebab2b",
-      "packSize": 1239637611,
-      "installDir": "mozu",
-      "coverUrl": "",
-      "iconUrl": "",
-      "manifestUrl": "https://gitee.com/Chino7/DreamLauncher/raw/master/local-cdn/mozu/client-file-manifest.json",
-      "enabled": true
     }
   ]
 }

@@ -41,6 +41,11 @@ public sealed class ClientManager
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (!client.Enabled)
+            {
+                continue;
+            }
+
             var localConfig = await ReadLocalConfigAsync(client, cancellationToken);
             var settings = config.ClientSettings.GetValueOrDefault(client.Id);
 

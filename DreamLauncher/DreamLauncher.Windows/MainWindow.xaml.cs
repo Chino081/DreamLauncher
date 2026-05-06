@@ -258,18 +258,18 @@ public partial class MainWindow : Window
 
     private static string GetExecutablePath()
     {
-        var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
-        if (!string.IsNullOrWhiteSpace(entryAssemblyPath))
+        if (!string.IsNullOrWhiteSpace(Environment.ProcessPath) && File.Exists(Environment.ProcessPath))
         {
-            var appHostPath = Path.ChangeExtension(entryAssemblyPath, ".exe");
-            if (File.Exists(appHostPath))
-            {
-                return appHostPath;
-            }
+            return Environment.ProcessPath;
         }
 
-        return Environment.ProcessPath
-            ?? Process.GetCurrentProcess().MainModule?.FileName
+        var appHostPath = Path.Combine(AppContext.BaseDirectory, "DreamLauncher.Windows.exe");
+        if (File.Exists(appHostPath))
+        {
+            return appHostPath;
+        }
+
+        return Process.GetCurrentProcess().MainModule?.FileName
             ?? throw new InvalidOperationException("无法获取当前启动器路径。");
     }
 

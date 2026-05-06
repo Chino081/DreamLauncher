@@ -1,0 +1,16 @@
+{
+  "id": "mozu",
+  "version": "1.0.1",
+  "baseUrl": "https://alist.mcdtc.com/DreamTamrac/d",
+  "files": [
+    {
+      "path": ".minecraft/versions/1.21.1-NeoForge/mods/[精致存储] refinedstorage-neoforge-2.0.5.jar",
+      "url": "https://alist.mcdtc.com/d/DreamTamrac/d/%5B%E7%B2%BE%E8%87%B4%E5%AD%98%E5%82%A8%5D%20refinedstorage-neoforge-2.0.5.jar?sign=EHuxB4S2A4rsRf9-kUWs3gL_Aol66m4QTCZdazNtLkY=:0",
+      "sha256": "e8c00abd849f728240dee45e08f96393a5d24e6de17e70a8a2d5b5967a498e13",
+      "size": 4511412
+    }
+  ],
+  "delete": [
+    ".minecraft/versions/1.21.1-NeoForge/mods/iris-neoforge-1.8.12+mc1.21.1.jar"
+  ]
+}

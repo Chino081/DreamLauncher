@@ -29,7 +29,7 @@
       "id": "mozu",
       "name": "模组服",
       "description": "客户端测试用",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "minecraftVersion": "1.21.1-NeoForge",
       "loader": "NeoForge",
       "loaderVersion": "21.1.228",

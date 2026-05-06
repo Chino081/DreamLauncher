@@ -22,6 +22,29 @@
       "installDir": "survival",
       "coverUrl": "",
       "iconUrl": "",
+      "manifestUrl": "",
+      "enabled": true
+    },
+    {
+      "id": "mozu",
+      "name": "模组服",
+      "description": "客户端测试用",
+      "version": "1.0.0",
+      "minecraftVersion": "1.21.1-NeoForge",
+      "loader": "NeoForge",
+      "loaderVersion": "21.1.228",
+      "javaVersion": 21,
+      "serverAddress": "play.mcdtc.com",
+      "defaultMemoryMb": 4096,
+      "jvmArgs": "-XX:+UseG1GC",
+      "gameArgs": "",
+      "packUrl": "https://alist.mcdtc.com/d/DreamTamrac/Mc%E6%A2%A6%E6%83%B3%E5%A4%A9%E5%9F%9F.zip?sign=eEt9IXSTmdq59aFMYA9bz9a5JfpekEl-fKFjAUIdnWg=:0",
+      "packSha256": "62eaa0f55caac401363642f7df4cedeb7849d481b1cc0a7b8c02b3a5c6ebab2b",
+      "packSize": 1239637611,
+      "installDir": "mozu",
+      "coverUrl": "",
+      "iconUrl": "",
+      "manifestUrl": "",
       "enabled": true
     }
   ]

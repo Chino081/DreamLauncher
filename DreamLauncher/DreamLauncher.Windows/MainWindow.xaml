@@ -331,8 +331,19 @@
                                                             <ColumnDefinition Width="58" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
-                                                        <Border Width="58" Height="58" Background="{StaticResource Accent}" CornerRadius="17" VerticalAlignment="Center">
-                                                            <TextBlock Text="咕" FontSize="25" LineHeight="31" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        <Border Width="58" Height="58" Background="{StaticResource Accent}" CornerRadius="17" VerticalAlignment="Center" ClipToBounds="True">
+                                                            <Grid>
+                                                                <TextBlock Text="{Binding CurrentAccountInitial}" FontSize="25" LineHeight="31" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <Image Source="{Binding CurrentAccountAvatar}"
+                                                                       Stretch="UniformToFill"
+                                                                       Visibility="{Binding HasCurrentAccountAvatar, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                                       RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                                                       SnapsToDevicePixels="True">
+                                                                    <Image.Clip>
+                                                                        <RectangleGeometry Rect="0,0,58,58" RadiusX="17" RadiusY="17" />
+                                                                    </Image.Clip>
+                                                                </Image>
+                                                            </Grid>
                                                         </Border>
                                                         <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
                                                             <TextBlock Text="{Binding CurrentAccountName}" FontSize="17" FontWeight="Bold" LineHeight="22" TextTrimming="CharacterEllipsis" />

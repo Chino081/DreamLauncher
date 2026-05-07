@@ -159,6 +159,7 @@ public partial class AccountSwitchWindow : Window, INotifyPropertyChanged
             StatusText = FormatStatus(account.Status);
             DetailText = $"{FormatType(account)} · 上次登录 {account.LastLoginUtc.LocalDateTime:yyyy-MM-dd HH:mm}";
             AvatarText = PlayerName.Length > 0 ? PlayerName[..1].ToUpperInvariant() : "?";
+            AvatarUrl = AccountAvatarUrl.FromAccount(account);
         }
 
         public string Id { get; }
@@ -172,6 +173,10 @@ public partial class AccountSwitchWindow : Window, INotifyPropertyChanged
         public string StatusText { get; }
 
         public string AvatarText { get; }
+
+        public string? AvatarUrl { get; }
+
+        public bool HasAvatar => !string.IsNullOrWhiteSpace(AvatarUrl);
 
         public bool IsDefault { get; }
 

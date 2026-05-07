@@ -1,4 +1,11 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Input;
 using DreamLauncher.Core.Accounts;
 using DreamLauncher.Core.Clients;
@@ -35,6 +42,9 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _hasProgress;
     private bool _isBusy;
     private CancellationTokenSource? _operationCancellation;
+    private ImageSource? _currentAccountAvatar;
+    private int _avatarLoadVersion;
+    private static readonly HttpClient AvatarHttpClient = CreateAvatarHttpClient();
 
     public MainWindowViewModel(
         LauncherConfigStore configStore,
@@ -116,11 +126,272 @@ public sealed class MainWindowViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CurrentAccountName));
                 OnPropertyChanged(nameof(CurrentAccountStatusText));
+                OnPropertyChanged(nameof(CurrentAccountInitial));
+                OnPropertyChanged(nameof(CurrentAccountAvatarUrl));
+                RefreshCurrentAccountAvatar();
             }
         }
     }
 
     public string CurrentAccountName => CurrentAccount?.PlayerName ?? "未登录";
+
+    public string CurrentAccountInitial => string.IsNullOrWhiteSpace(CurrentAccount?.PlayerName)
+        ? "\u5495"
+        : CurrentAccount.PlayerName[..1].ToUpperInvariant();
+
+    public string? CurrentAccountAvatarUrl => AccountAvatarUrl.FromAccount(CurrentAccount);
+
+    public ImageSource? CurrentAccountAvatar
+    {
+        get => _currentAccountAvatar;
+        private set
+        {
+            if (ReferenceEquals(_currentAccountAvatar, value))
+            {
+                return;
+            }
+
+            _currentAccountAvatar = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasCurrentAccountAvatar));
+        }
+    }
+
+    public bool HasCurrentAccountAvatar => CurrentAccountAvatar is not null;
+
+    private async void RefreshCurrentAccountAvatar()
+    {
+        var version = unchecked(++_avatarLoadVersion);
+        CurrentAccountAvatar = null;
+        var account = CurrentAccount;
+        if (account is null)
+        {
+            return;
+        }
+
+        var officialSkinAvatar = await LoadOfficialSkinAvatarAsync(account);
+        if (officialSkinAvatar is not null)
+        {
+            if (version == _avatarLoadVersion)
+            {
+                CurrentAccountAvatar = officialSkinAvatar;
+            }
+
+            return;
+        }
+
+        foreach (var avatarUrl in AccountAvatarUrl.FromAccountCandidates(account))
+        {
+            try
+            {
+                var avatar = await LoadBitmapImageAsync(avatarUrl, 96);
+
+                if (version == _avatarLoadVersion)
+                {
+                    CurrentAccountAvatar = avatar;
+                }
+
+                return;
+            }
+            catch
+            {
+                // Try the next avatar provider, then fall back to the account initial.
+            }
+        }
+    }
+
+    private static async Task<ImageSource?> LoadOfficialSkinAvatarAsync(AccountMetadata account)
+    {
+        if (account.Type != AccountType.Microsoft ||
+            string.IsNullOrWhiteSpace(account.Uuid))
+        {
+            return null;
+        }
+
+        var uuid = account.Uuid.Trim().Replace("-", "", StringComparison.Ordinal);
+        if (uuid.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var profileUrl = $"https://sessionserver.mojang.com/session/minecraft/profile/{Uri.EscapeDataString(uuid)}";
+            using var response = await AvatarHttpClient.GetAsync(profileUrl, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            var profileJson = await response.Content.ReadAsStringAsync();
+            var skinUrl = ReadSkinUrl(profileJson);
+            if (string.IsNullOrWhiteSpace(skinUrl))
+            {
+                return null;
+            }
+
+            var skin = await LoadBitmapImageAsync(skinUrl, null);
+            return CreateMinecraftHeadAvatar(skin);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<BitmapImage> LoadBitmapImageAsync(string url, int? decodePixelWidth)
+    {
+        using var response = await AvatarHttpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+
+        await using var remoteStream = await response.Content.ReadAsStreamAsync();
+        using var memoryStream = new MemoryStream();
+        await remoteStream.CopyToAsync(memoryStream);
+        memoryStream.Position = 0;
+
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        if (decodePixelWidth is > 0)
+        {
+            image.DecodePixelWidth = decodePixelWidth.Value;
+        }
+
+        image.StreamSource = memoryStream;
+        image.EndInit();
+        image.Freeze();
+        return image;
+    }
+
+    private static string? ReadSkinUrl(string profileJson)
+    {
+        using var profileDocument = JsonDocument.Parse(profileJson);
+        if (!profileDocument.RootElement.TryGetProperty("properties", out var properties) ||
+            properties.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var property in properties.EnumerateArray())
+        {
+            if (!property.TryGetProperty("name", out var name) ||
+                !string.Equals(name.GetString(), "textures", StringComparison.OrdinalIgnoreCase) ||
+                !property.TryGetProperty("value", out var value) ||
+                string.IsNullOrWhiteSpace(value.GetString()))
+            {
+                continue;
+            }
+
+            var textureJson = Encoding.UTF8.GetString(Convert.FromBase64String(value.GetString()!));
+            using var textureDocument = JsonDocument.Parse(textureJson);
+            if (textureDocument.RootElement.TryGetProperty("textures", out var textures) &&
+                textures.TryGetProperty("SKIN", out var skin) &&
+                skin.TryGetProperty("url", out var url))
+            {
+                return url.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private static ImageSource CreateMinecraftHeadAvatar(BitmapSource skin)
+    {
+        const int sourceHeadSize = 8;
+        const int targetSize = 64;
+        const int blockSize = targetSize / sourceHeadSize;
+
+        var converted = skin.Format == PixelFormats.Bgra32
+            ? skin
+            : new FormatConvertedBitmap(skin, PixelFormats.Bgra32, null, 0);
+
+        var stride = converted.PixelWidth * 4;
+        var pixels = new byte[stride * converted.PixelHeight];
+        converted.CopyPixels(pixels, stride, 0);
+
+        var scaleX = Math.Max(1, converted.PixelWidth / 64);
+        var scaleY = Math.Max(1, converted.PixelHeight / 64);
+        var targetStride = targetSize * 4;
+        var targetPixels = new byte[targetStride * targetSize];
+
+        for (var y = 0; y < sourceHeadSize; y++)
+        {
+            for (var x = 0; x < sourceHeadSize; x++)
+            {
+                var baseColor = ReadPixel(pixels, stride, (8 + x) * scaleX, (8 + y) * scaleY);
+                var overlayColor = ReadPixel(pixels, stride, (40 + x) * scaleX, (8 + y) * scaleY);
+                var color = BlendOver(baseColor, overlayColor);
+
+                for (var py = y * blockSize; py < (y + 1) * blockSize; py++)
+                {
+                    for (var px = x * blockSize; px < (x + 1) * blockSize; px++)
+                    {
+                        WritePixel(targetPixels, targetStride, px, py, color);
+                    }
+                }
+            }
+        }
+
+        var avatar = BitmapSource.Create(
+            targetSize,
+            targetSize,
+            96,
+            96,
+            PixelFormats.Bgra32,
+            null,
+            targetPixels,
+            targetStride);
+        avatar.Freeze();
+        return avatar;
+    }
+
+    private static BgraColor ReadPixel(byte[] pixels, int stride, int x, int y)
+    {
+        var index = (y * stride) + (x * 4);
+        return new BgraColor(
+            pixels[index],
+            pixels[index + 1],
+            pixels[index + 2],
+            pixels[index + 3]);
+    }
+
+    private static void WritePixel(byte[] pixels, int stride, int x, int y, BgraColor color)
+    {
+        var index = (y * stride) + (x * 4);
+        pixels[index] = color.B;
+        pixels[index + 1] = color.G;
+        pixels[index + 2] = color.R;
+        pixels[index + 3] = color.A;
+    }
+
+    private static BgraColor BlendOver(BgraColor background, BgraColor foreground)
+    {
+        if (foreground.A == 0)
+        {
+            return background;
+        }
+
+        if (foreground.A == 255)
+        {
+            return foreground;
+        }
+
+        var alpha = foreground.A / 255d;
+        return new BgraColor(
+            (byte)Math.Round((foreground.B * alpha) + (background.B * (1d - alpha))),
+            (byte)Math.Round((foreground.G * alpha) + (background.G * (1d - alpha))),
+            (byte)Math.Round((foreground.R * alpha) + (background.R * (1d - alpha))),
+            255);
+    }
+
+    private readonly record struct BgraColor(byte B, byte G, byte R, byte A);
+
+    private static HttpClient CreateAvatarHttpClient()
+    {
+        var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(12)
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("DreamLauncher/0.1");
+        return client;
+    }
 
     public string CurrentAccountStatusText => CurrentAccount is null
         ? "请添加账号"

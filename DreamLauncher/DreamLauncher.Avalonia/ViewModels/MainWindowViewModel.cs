@@ -12,6 +12,7 @@ using DreamLauncher.Models.Config;
 using DreamLauncher.Models.Java;
 using DreamLauncher.Models.Minecraft;
 using DreamLauncher.Models.Operations;
+using Avalonia.Media.Imaging;
 using System.Runtime.InteropServices;
 
 namespace DreamLauncher.Avalonia.ViewModels;
@@ -50,6 +51,9 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _syncingJavaOptions;
     private bool _syncingMemoryPreset;
     private CancellationTokenSource? _operationCancellation;
+    private Bitmap? _currentAccountAvatar;
+    private int _avatarLoadVersion;
+    private static readonly HttpClient AvatarHttpClient = CreateAvatarHttpClient();
 
     public MainWindowViewModel(
         LauncherPaths paths,
@@ -156,6 +160,8 @@ public sealed class MainWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(CurrentAccountStatusText));
                 OnPropertyChanged(nameof(CurrentAccountInitial));
                 OnPropertyChanged(nameof(CurrentAccountOnlineText));
+                OnPropertyChanged(nameof(CurrentAccountAvatarUrl));
+                RefreshCurrentAccountAvatar();
             }
         }
     }
@@ -163,8 +169,30 @@ public sealed class MainWindowViewModel : ObservableObject
     public string CurrentAccountName => CurrentAccount?.PlayerName ?? "未登录";
 
     public string CurrentAccountInitial => string.IsNullOrWhiteSpace(CurrentAccount?.PlayerName)
-        ? "梦"
+        ? "\u5495"
         : CurrentAccount.PlayerName[..1].ToUpperInvariant();
+
+    public string? CurrentAccountAvatarUrl => AccountAvatarUrl.FromAccount(CurrentAccount);
+
+    public Bitmap? CurrentAccountAvatar
+    {
+        get => _currentAccountAvatar;
+        private set
+        {
+            if (ReferenceEquals(_currentAccountAvatar, value))
+            {
+                return;
+            }
+
+            var previous = _currentAccountAvatar;
+            _currentAccountAvatar = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasCurrentAccountAvatar));
+            previous?.Dispose();
+        }
+    }
+
+    public bool HasCurrentAccountAvatar => CurrentAccountAvatar is not null;
 
     public string CurrentAccountStatusText => CurrentAccount is null
         ? "请添加账号"
@@ -181,6 +209,59 @@ public sealed class MainWindowViewModel : ObservableObject
         : CurrentAccount.Status == AccountLoginStatus.Invalid
             ? "状态：已失效"
             : "状态：在线";
+
+    private async void RefreshCurrentAccountAvatar()
+    {
+        var version = unchecked(++_avatarLoadVersion);
+        CurrentAccountAvatar = null;
+
+        foreach (var avatarUrl in AccountAvatarUrl.FromAccountCandidates(CurrentAccount))
+        {
+            try
+            {
+                using var response = await AvatarHttpClient.GetAsync(
+                    avatarUrl,
+                    HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                await using var remoteStream = await response.Content.ReadAsStreamAsync();
+                using var memoryStream = new MemoryStream();
+                await remoteStream.CopyToAsync(memoryStream);
+                memoryStream.Position = 0;
+
+                var avatar = new Bitmap(memoryStream);
+                if (version == _avatarLoadVersion)
+                {
+                    CurrentAccountAvatar = avatar;
+                }
+                else
+                {
+                    avatar.Dispose();
+                }
+
+                return;
+            }
+            catch
+            {
+                // Try the next avatar provider, then fall back to the account initial.
+            }
+        }
+
+        if (version == _avatarLoadVersion)
+        {
+            CurrentAccountAvatar = null;
+        }
+    }
+
+    private static HttpClient CreateAvatarHttpClient()
+    {
+        var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(12)
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("DreamLauncher/0.1");
+        return client;
+    }
 
     public string StatusMessage
     {

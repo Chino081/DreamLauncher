@@ -404,14 +404,56 @@ public partial class MainWindow : Window
 
         if (files.Count > 0)
         {
-            HashToolPathTextBox.Text = files[0].Path.LocalPath;
-            await CalculateSelectedFileHashAsync();
+            await UseHashToolFileAsync(files[0].Path.LocalPath);
         }
     }
 
     private async void CalculateHash_Click(object? sender, RoutedEventArgs e)
     {
         await CalculateSelectedFileHashAsync();
+    }
+
+    private void HashToolFile_DragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = TryGetDroppedHashFile(e, out _)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void HashToolFile_Drop(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (!TryGetDroppedHashFile(e, out var path))
+        {
+            await MessageDialog.ShowAsync(this, "文件校验工具", "请拖入一个存在的本地文件。");
+            return;
+        }
+
+        await UseHashToolFileAsync(path);
+    }
+
+    private async Task UseHashToolFileAsync(string path)
+    {
+        HashToolPathTextBox.Text = path;
+        await CalculateSelectedFileHashAsync();
+    }
+
+    private static bool TryGetDroppedHashFile(DragEventArgs e, out string path)
+    {
+        path = "";
+        if (!e.DataTransfer.Contains(DataFormat.File))
+        {
+            return false;
+        }
+
+        path = e.DataTransfer.TryGetFiles()?
+            .Select(item => item.TryGetLocalPath())
+            .Where(localPath => !string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath))
+            .Select(localPath => localPath!)
+            .FirstOrDefault() ?? "";
+
+        return path.Length > 0;
     }
 
     private async void CopyHashResult_Click(object? sender, RoutedEventArgs e)

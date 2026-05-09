@@ -792,7 +792,13 @@
                                                 </Border>
 
                                                 <TextBlock Text="文件校验工具" Foreground="#00C28A" FontWeight="Bold" />
-                                                <Border Background="#3A4058" CornerRadius="14" Padding="16" Margin="0,10,0,0">
+                                                <Border Background="#3A4058"
+                                                        CornerRadius="14"
+                                                        Padding="16"
+                                                        Margin="0,10,0,0"
+                                                        AllowDrop="True"
+                                                        PreviewDragOver="HashToolFile_PreviewDragOver"
+                                                        PreviewDrop="HashToolFile_PreviewDrop">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="140" />
@@ -813,7 +819,12 @@
                                                         </Grid.RowDefinitions>
 
                                                         <TextBlock Text="本地文件" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="HashToolPathTextBox" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
+                                                        <TextBox x:Name="HashToolPathTextBox"
+                                                                 Grid.Column="1"
+                                                                 Style="{StaticResource LauncherTextBox}"
+                                                                 AllowDrop="True"
+                                                                 PreviewDragOver="HashToolFile_PreviewDragOver"
+                                                                 PreviewDrop="HashToolFile_PreviewDrop" />
                                                         <Button Grid.Column="2" Content="选择" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0" Click="ChooseHashFile_Click" />
                                                         <Button Grid.Column="3" Content="计算" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0" Click="CalculateHash_Click" />
 

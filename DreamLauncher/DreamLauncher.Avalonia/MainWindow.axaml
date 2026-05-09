@@ -852,12 +852,22 @@
                         </Border>
 
                         <TextBlock Text="文件校验工具" Foreground="#00C28A" FontWeight="Bold" />
-                        <Border Background="#3A4058" CornerRadius="14" Padding="16" Margin="0,10,0,0">
+                        <Border Background="#3A4058"
+                                CornerRadius="14"
+                                Padding="16"
+                                Margin="0,10,0,0"
+                                DragDrop.AllowDrop="True"
+                                DragDrop.DragOver="HashToolFile_DragOver"
+                                DragDrop.Drop="HashToolFile_Drop">
                           <Grid RowDefinitions="Auto,12,Auto,12,Auto,12,Auto,12,Auto"
                                 ColumnDefinitions="140,*,86,86"
                                 ColumnSpacing="10">
                             <TextBlock Text="本地文件" VerticalAlignment="Center" />
-                            <TextBox x:Name="HashToolPathTextBox" Grid.Column="1" />
+                            <TextBox x:Name="HashToolPathTextBox"
+                                     Grid.Column="1"
+                                     DragDrop.AllowDrop="True"
+                                     DragDrop.DragOver="HashToolFile_DragOver"
+                                     DragDrop.Drop="HashToolFile_Drop" />
                             <Button Grid.Column="2" Content="选择" Click="ChooseHashFile_Click" />
                             <Button Grid.Column="3" Classes="primary" Content="计算" Click="CalculateHash_Click" />
 

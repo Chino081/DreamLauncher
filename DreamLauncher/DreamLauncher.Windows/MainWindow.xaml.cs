@@ -603,13 +603,51 @@ public partial class MainWindow : Window
             return;
         }
 
-        HashToolPathTextBox.Text = dialog.FileName;
-        await CalculateSelectedFileHashAsync();
+        await UseHashToolFileAsync(dialog.FileName);
     }
 
     private async void CalculateHash_Click(object sender, RoutedEventArgs e)
     {
         await CalculateSelectedFileHashAsync();
+    }
+
+    private void HashToolFile_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = TryGetDroppedHashFile(e.Data, out _)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void HashToolFile_PreviewDrop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (!TryGetDroppedHashFile(e.Data, out var path))
+        {
+            LauncherMessageBox.Show(this, "请拖入一个存在的本地文件。", "文件校验工具", LauncherMessageKind.Info);
+            return;
+        }
+
+        await UseHashToolFileAsync(path);
+    }
+
+    private async Task UseHashToolFileAsync(string path)
+    {
+        HashToolPathTextBox.Text = path;
+        await CalculateSelectedFileHashAsync();
+    }
+
+    private static bool TryGetDroppedHashFile(IDataObject data, out string path)
+    {
+        path = "";
+        if (!data.GetDataPresent(DataFormats.FileDrop) ||
+            data.GetData(DataFormats.FileDrop) is not string[] paths)
+        {
+            return false;
+        }
+
+        path = paths.FirstOrDefault(File.Exists) ?? "";
+        return path.Length > 0;
     }
 
     private void CopyHashResult_Click(object sender, RoutedEventArgs e)

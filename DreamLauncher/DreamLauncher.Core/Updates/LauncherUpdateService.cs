@@ -58,7 +58,8 @@ public sealed class LauncherUpdateService
         LauncherUpdateCheckResult update,
         int maxRetryCount,
         IProgress<LauncherOperationProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? speedLimitKbPerSecond = null)
     {
         var downloadsDirectory = Path.Combine(_paths.DownloadsPath, "launcher");
         Directory.CreateDirectory(downloadsDirectory);
@@ -73,7 +74,8 @@ public sealed class LauncherUpdateService
             update.Manifest.WindowsX64Sha256,
             maxRetryCount,
             progress,
-            cancellationToken);
+            cancellationToken,
+            speedLimitKbPerSecond);
 
         return packagePath;
     }

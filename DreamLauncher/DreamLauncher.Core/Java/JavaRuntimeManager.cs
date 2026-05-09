@@ -198,7 +198,8 @@ public sealed partial class JavaRuntimeManager
         JavaRuntimeDefinition runtime,
         int maxRetryCount,
         IProgress<LauncherOperationProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? speedLimitKbPerSecond = null)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -212,7 +213,8 @@ public sealed partial class JavaRuntimeManager
             runtime.WindowsX64Sha256,
             maxRetryCount,
             progress,
-            cancellationToken);
+            cancellationToken,
+            speedLimitKbPerSecond);
 
         var stagingDirectory = Path.Combine(_paths.JavaRuntimePath, $"jre{runtime.Version}.staging-{Guid.NewGuid():N}");
         var finalDirectory = _paths.GetPrivateJavaDirectory(runtime.Version);

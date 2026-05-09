@@ -92,7 +92,12 @@ public sealed class ClientManager
         IProgress<LauncherOperationProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        return InstallOrUpdateCoreAsync(client, config.Download.MaxRetryCount, progress, cancellationToken);
+        return InstallOrUpdateCoreAsync(
+            client,
+            config.Download.MaxRetryCount,
+            config.Download.SpeedLimitKbPerSecond,
+            progress,
+            cancellationToken);
     }
 
     public Task RepairAsync(
@@ -101,7 +106,12 @@ public sealed class ClientManager
         IProgress<LauncherOperationProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        return InstallCoreAsync(client, config.Download.MaxRetryCount, progress, cancellationToken);
+        return InstallCoreAsync(
+            client,
+            config.Download.MaxRetryCount,
+            config.Download.SpeedLimitKbPerSecond,
+            progress,
+            cancellationToken);
     }
 
     public Task DeleteClientAsync(ClientDefinition client, CancellationToken cancellationToken = default)
@@ -127,6 +137,7 @@ public sealed class ClientManager
     private async Task InstallCoreAsync(
         ClientDefinition client,
         int maxRetryCount,
+        int? speedLimitKbPerSecond,
         IProgress<LauncherOperationProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -152,7 +163,8 @@ public sealed class ClientManager
             client.PackSha256,
             maxRetryCount,
             progress,
-            cancellationToken);
+            cancellationToken,
+            speedLimitKbPerSecond);
 
         var finalDirectory = _paths.MinecraftDirectory;
         var metadataDirectory = _paths.GetClientDirectory(client);
@@ -212,23 +224,36 @@ public sealed class ClientManager
     private async Task InstallOrUpdateCoreAsync(
         ClientDefinition client,
         int maxRetryCount,
+        int? speedLimitKbPerSecond,
         IProgress<LauncherOperationProgress>? progress,
         CancellationToken cancellationToken)
     {
         var localConfig = await ReadLocalConfigAsync(client, cancellationToken);
         if (ShouldUseManifestUpdate(client, localConfig))
         {
-            await InstallManifestUpdateAsync(client, localConfig!, maxRetryCount, progress, cancellationToken);
+            await InstallManifestUpdateAsync(
+                client,
+                localConfig!,
+                maxRetryCount,
+                speedLimitKbPerSecond,
+                progress,
+                cancellationToken);
             return;
         }
 
-        await InstallCoreAsync(client, maxRetryCount, progress, cancellationToken);
+        await InstallCoreAsync(
+            client,
+            maxRetryCount,
+            speedLimitKbPerSecond,
+            progress,
+            cancellationToken);
     }
 
     private async Task InstallManifestUpdateAsync(
         ClientDefinition client,
         LocalClientConfig localConfig,
         int maxRetryCount,
+        int? speedLimitKbPerSecond,
         IProgress<LauncherOperationProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -324,7 +349,8 @@ public sealed class ClientManager
                 item.Entry.Sha256,
                 maxRetryCount,
                 progress,
-                cancellationToken);
+                cancellationToken,
+                speedLimitKbPerSecond);
 
             completedBytes += Math.Max(0, item.Entry.Size);
             downloadedFiles.Add((item, cachePath));

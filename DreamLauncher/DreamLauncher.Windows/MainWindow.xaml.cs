@@ -153,7 +153,8 @@ public partial class MainWindow : Window
                 update,
                 config.Download.MaxRetryCount,
                 CreateLauncherUpdateProgressReporter(),
-                CancellationToken.None);
+                CancellationToken.None,
+                config.Download.SpeedLimitKbPerSecond);
 
             LauncherMessageBox.Show(
                 this,

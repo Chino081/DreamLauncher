@@ -609,7 +609,8 @@ public sealed class MainWindowViewModel : ObservableObject
             runtime,
             config.Download.MaxRetryCount,
             CreateProgressReporter(SelectedClient),
-            cancellationToken);
+            cancellationToken,
+            config.Download.SpeedLimitKbPerSecond);
     }
 
     private async Task AddAccountAsync()

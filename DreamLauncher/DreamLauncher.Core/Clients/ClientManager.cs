@@ -181,7 +181,13 @@ public sealed class ClientManager
                 Progress = 0
             });
 
-            await _extractor.ExtractMinecraftContentAsync(packPath, stagingDirectory, progress, cancellationToken);
+            await Task.Run(
+                async () => await _extractor.ExtractMinecraftContentAsync(
+                    packPath,
+                    stagingDirectory,
+                    progress,
+                    cancellationToken),
+                cancellationToken);
 
             progress?.Report(new LauncherOperationProgress
             {
@@ -190,8 +196,13 @@ public sealed class ClientManager
                 Progress = null
             });
 
-            MergeDirectory(stagingDirectory, finalDirectory, cancellationToken);
-            SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, stagingDirectory);
+            await Task.Run(
+                () =>
+                {
+                    MergeDirectory(stagingDirectory, finalDirectory, cancellationToken);
+                    SafeDirectory.DeleteChildDirectory(_paths.ProgramDirectory, stagingDirectory);
+                },
+                cancellationToken);
             await WriteLocalConfigAsync(metadataDirectory, client, cancellationToken);
 
             progress?.Report(new LauncherOperationProgress
@@ -582,10 +593,7 @@ public sealed class ClientManager
         try
         {
             await using var stream = File.OpenRead(path);
-            return await JsonSerializer.DeserializeAsync<ClientFileManifest>(
-                stream,
-                LauncherJson.Options,
-                cancellationToken);
+            return await LauncherJson.DeserializeAsync<ClientFileManifest>(stream, cancellationToken);
         }
         catch (JsonException)
         {
@@ -601,7 +609,7 @@ public sealed class ClientManager
         Directory.CreateDirectory(clientDirectory);
         var manifestPath = Path.Combine(clientDirectory, "manifest.json");
         await using var stream = new FileStream(manifestPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await JsonSerializer.SerializeAsync(stream, manifest, LauncherJson.Options, cancellationToken);
+        await LauncherJson.SerializeAsync(stream, manifest, cancellationToken);
     }
 
     private string GetLocalManifestPath(ClientDefinition client)
@@ -660,10 +668,7 @@ public sealed class ClientManager
         try
         {
             await using var stream = File.OpenRead(path);
-            return await JsonSerializer.DeserializeAsync<LocalClientConfig>(
-                stream,
-                LauncherJson.Options,
-                cancellationToken);
+            return await LauncherJson.DeserializeAsync<LocalClientConfig>(stream, cancellationToken);
         }
         catch (JsonException)
         {
@@ -757,7 +762,7 @@ public sealed class ClientManager
         var configPath = Path.Combine(clientDirectory, "client.json");
         Directory.CreateDirectory(clientDirectory);
         await using var stream = new FileStream(configPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await JsonSerializer.SerializeAsync(stream, localConfig, LauncherJson.Options, cancellationToken);
+        await LauncherJson.SerializeAsync(stream, localConfig, cancellationToken);
     }
 
     private static bool IsRemoteVersionNewer(string remoteVersion, string localVersion)

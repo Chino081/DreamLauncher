@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Text;
 using DreamLauncher.Models.Operations;
 
@@ -29,6 +30,7 @@ public sealed class SafeZipExtractor
 
         long completedBytes = 0;
         var completedEntries = 0;
+        var progressReporter = new ExtractionProgressReporter(progress);
 
         foreach (var entry in entries)
         {
@@ -67,25 +69,21 @@ public sealed class SafeZipExtractor
                     ? null
                     : (double)(completedEntries + entryFraction) / entries.Length;
 
-                progress?.Report(new LauncherOperationProgress
-                {
-                    Stage = "extract",
-                    Message = $"正在解压 {completedEntries + 1}/{entries.Length} 个文件",
-                    Progress = fileProgress,
-                    BytesCompleted = completedBytes,
-                    TotalBytes = totalBytes
-                });
+                progressReporter.Report(
+                    $"正在解压 {completedEntries + 1}/{entries.Length} 个文件",
+                    fileProgress,
+                    completedBytes,
+                    totalBytes,
+                    force: false);
             }
 
             completedEntries++;
-            progress?.Report(new LauncherOperationProgress
-            {
-                Stage = "extract",
-                Message = $"已解压 {completedEntries}/{entries.Length} 个文件",
-                Progress = entries.Length == 0 ? 1 : (double)completedEntries / entries.Length,
-                BytesCompleted = completedBytes,
-                TotalBytes = totalBytes
-            });
+            progressReporter.Report(
+                $"已解压 {completedEntries}/{entries.Length} 个文件",
+                entries.Length == 0 ? 1 : (double)completedEntries / entries.Length,
+                completedBytes,
+                totalBytes,
+                force: completedEntries == entries.Length);
         }
     }
 
@@ -124,6 +122,7 @@ public sealed class SafeZipExtractor
 
         long completedBytes = 0;
         var completedEntries = 0;
+        var progressReporter = new ExtractionProgressReporter(progress);
 
         foreach (var item in entries)
         {
@@ -162,25 +161,21 @@ public sealed class SafeZipExtractor
                     ? null
                     : (double)(completedEntries + entryFraction) / entries.Length;
 
-                progress?.Report(new LauncherOperationProgress
-                {
-                    Stage = "extract",
-                    Message = $"正在解压 {completedEntries + 1}/{entries.Length} 个文件",
-                    Progress = fileProgress,
-                    BytesCompleted = completedBytes,
-                    TotalBytes = totalBytes
-                });
+                progressReporter.Report(
+                    $"正在解压 {completedEntries + 1}/{entries.Length} 个文件",
+                    fileProgress,
+                    completedBytes,
+                    totalBytes,
+                    force: false);
             }
 
             completedEntries++;
-            progress?.Report(new LauncherOperationProgress
-            {
-                Stage = "extract",
-                Message = $"已解压 {completedEntries}/{entries.Length} 个文件",
-                Progress = entries.Length == 0 ? 1 : (double)completedEntries / entries.Length,
-                BytesCompleted = completedBytes,
-                TotalBytes = totalBytes
-            });
+            progressReporter.Report(
+                $"已解压 {completedEntries}/{entries.Length} 个文件",
+                entries.Length == 0 ? 1 : (double)completedEntries / entries.Length,
+                completedBytes,
+                totalBytes,
+                force: completedEntries == entries.Length);
         }
     }
 
@@ -255,5 +250,43 @@ public sealed class SafeZipExtractor
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         return Encoding.GetEncoding("GB18030");
+    }
+
+    private sealed class ExtractionProgressReporter
+    {
+        private static readonly TimeSpan ReportInterval = TimeSpan.FromMilliseconds(120);
+
+        private readonly IProgress<LauncherOperationProgress>? _progress;
+        private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+        private TimeSpan _lastReportedElapsed;
+
+        public ExtractionProgressReporter(IProgress<LauncherOperationProgress>? progress)
+        {
+            _progress = progress;
+        }
+
+        public void Report(
+            string message,
+            double? progress,
+            long completedBytes,
+            long totalBytes,
+            bool force)
+        {
+            var elapsed = _stopwatch.Elapsed;
+            if (!force && elapsed - _lastReportedElapsed < ReportInterval)
+            {
+                return;
+            }
+
+            _lastReportedElapsed = elapsed;
+            _progress?.Report(new LauncherOperationProgress
+            {
+                Stage = "extract",
+                Message = message,
+                Progress = progress,
+                BytesCompleted = completedBytes,
+                TotalBytes = totalBytes
+            });
+        }
     }
 }

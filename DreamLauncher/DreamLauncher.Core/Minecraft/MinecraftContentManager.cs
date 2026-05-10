@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using DreamLauncher.Core.Config;
+using DreamLauncher.Core.Serialization;
 using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Minecraft;
 
@@ -290,7 +291,7 @@ public sealed class MinecraftContentManager
             entries.Add(resourceKey);
         }
 
-        var lineValue = key + JsonSerializer.Serialize(entries);
+        var lineValue = key + LauncherJson.Serialize(entries);
         if (index >= 0)
         {
             lines[index] = lineValue;
@@ -394,7 +395,7 @@ public sealed class MinecraftContentManager
     {
         try
         {
-            return JsonSerializer.Deserialize<List<string>>(value) ?? [];
+            return LauncherJson.Deserialize<List<string>>(value) ?? [];
         }
         catch (JsonException)
         {

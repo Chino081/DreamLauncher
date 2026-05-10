@@ -56,7 +56,7 @@ public sealed class RemoteConfigClient
     private async Task<T> GetJsonAsync<T>(string url, CancellationToken cancellationToken)
     {
         await using var stream = await OpenConfigStreamAsync(url, cancellationToken);
-        return await JsonSerializer.DeserializeAsync<T>(stream, LauncherJson.Options, cancellationToken)
+        return await LauncherJson.DeserializeAsync<T>(stream, cancellationToken)
             ?? throw new InvalidDataException("远程配置内容为空或格式无效。");
     }
 

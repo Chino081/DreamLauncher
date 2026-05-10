@@ -43,10 +43,8 @@ public sealed class LauncherConfigStore
                 LauncherConfig config;
                 await using (var stream = File.OpenRead(_paths.ConfigPath))
                 {
-                    config = await JsonSerializer.DeserializeAsync<LauncherConfig>(
-                        stream,
-                        LauncherJson.Options,
-                        cancellationToken) ?? new LauncherConfig();
+                    config = await LauncherJson.DeserializeAsync<LauncherConfig>(stream, cancellationToken)
+                        ?? new LauncherConfig();
                 }
 
                 if (ApplyFixedSources(config))
@@ -113,7 +111,7 @@ public sealed class LauncherConfigStore
         var tempPath = _paths.ConfigPath + ".tmp";
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            await JsonSerializer.SerializeAsync(stream, config, LauncherJson.Options, cancellationToken);
+            await LauncherJson.SerializeAsync(stream, config, cancellationToken);
         }
 
         File.Copy(tempPath, _paths.ConfigPath, overwrite: true);

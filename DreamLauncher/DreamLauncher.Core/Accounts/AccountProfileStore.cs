@@ -28,10 +28,8 @@ public sealed class AccountProfileStore
             try
             {
                 await using var stream = File.OpenRead(_paths.AccountDataPath);
-                return await JsonSerializer.DeserializeAsync<AccountProfileDocument>(
-                    stream,
-                    LauncherJson.Options,
-                    cancellationToken) ?? new AccountProfileDocument();
+                return await LauncherJson.DeserializeAsync<AccountProfileDocument>(stream, cancellationToken)
+                    ?? new AccountProfileDocument();
             }
             catch (JsonException)
             {
@@ -56,7 +54,7 @@ public sealed class AccountProfileStore
             var tempPath = _paths.AccountDataPath + ".tmp";
             await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                await JsonSerializer.SerializeAsync(stream, document, LauncherJson.Options, cancellationToken);
+                await LauncherJson.SerializeAsync(stream, document, cancellationToken);
             }
 
             File.Copy(tempPath, _paths.AccountDataPath, overwrite: true);

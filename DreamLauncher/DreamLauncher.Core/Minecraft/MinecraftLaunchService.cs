@@ -16,13 +16,26 @@ namespace DreamLauncher.Core.Minecraft;
 
 public sealed class MinecraftLaunchService
 {
+    private const string AuthlibInjectorMirrorBaseUrl =
+        "https://bmclapi2.bangbang93.com/mirrors/authlib-injector/";
+    private const string AuthlibInjectorOfficialBaseUrl =
+        "https://authlib-injector.yushi.moe/";
+
     private readonly LauncherPaths _paths;
     private readonly HttpDownloadService _downloadService;
+    private readonly HttpClient _metadataHttpClient;
 
-    public MinecraftLaunchService(LauncherPaths paths, HttpDownloadService? downloadService = null)
+    public MinecraftLaunchService(
+        LauncherPaths paths,
+        HttpDownloadService? downloadService = null,
+        HttpClient? metadataHttpClient = null)
     {
         _paths = paths;
         _downloadService = downloadService ?? new HttpDownloadService();
+        _metadataHttpClient = metadataHttpClient ?? new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(20)
+        };
     }
 
     public async Task<MinecraftLaunchResult> LaunchAsync(
@@ -219,10 +232,13 @@ public sealed class MinecraftLaunchService
         };
 
         var fallbackAuthlibInjectorJarPath = Path.Combine(_paths.RuntimePath, "authlib-injector.jar");
-        var resolvedAuthlibInjectorJarPath = string.IsNullOrWhiteSpace(authlibInjectorJarPath) &&
-                                             File.Exists(fallbackAuthlibInjectorJarPath)
-            ? fallbackAuthlibInjectorJarPath
-            : authlibInjectorJarPath;
+        var resolvedAuthlibInjectorJarPath = await ResolveAuthlibInjectorJarPathAsync(
+            account,
+            authlibInjectorJarPath,
+            fallbackAuthlibInjectorJarPath,
+            maxRetryCount,
+            progress,
+            cancellationToken);
 
         AddThirdPartyAuthArguments(
             account,
@@ -1118,10 +1134,142 @@ public sealed class MinecraftLaunchService
         }
     }
 
+    private async Task<string?> ResolveAuthlibInjectorJarPathAsync(
+        AccountMetadata account,
+        string? configuredPath,
+        string fallbackPath,
+        int maxRetryCount,
+        IProgress<LauncherOperationProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (account.Type != AccountType.ThirdParty)
+        {
+            return configuredPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(configuredPath.Trim('"', ' '));
+            if (File.Exists(expanded))
+            {
+                return expanded;
+            }
+        }
+
+        if (File.Exists(fallbackPath))
+        {
+            return fallbackPath;
+        }
+
+        Directory.CreateDirectory(_paths.RuntimePath);
+        progress?.Report(new LauncherOperationProgress
+        {
+            Stage = "download",
+            Message = "正在获取 authlib-injector 最新版本信息",
+            Progress = null
+        });
+
+        var artifact = await GetLatestAuthlibInjectorArtifactAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(artifact.Sha256))
+        {
+            throw new InvalidDataException("authlib-injector 最新版本信息缺少 SHA256。");
+        }
+
+        progress?.Report(new LauncherOperationProgress
+        {
+            Stage = "download",
+            Message = $"正在下载 authlib-injector {artifact.Version}",
+            Progress = 0
+        });
+
+        await _downloadService.DownloadFileAsync(
+            artifact.DownloadUrl.ToString(),
+            fallbackPath,
+            artifact.Sha256,
+            maxRetryCount,
+            progress,
+            cancellationToken);
+
+        progress?.Report(new LauncherOperationProgress
+        {
+            Stage = "ready",
+            Message = $"authlib-injector {artifact.Version} 已就绪",
+            Progress = 1
+        });
+
+        return fallbackPath;
+    }
+
+    private async Task<AuthlibInjectorArtifact> GetLatestAuthlibInjectorArtifactAsync(CancellationToken cancellationToken)
+    {
+        Exception? lastException = null;
+        foreach (var baseUrl in new[] { AuthlibInjectorMirrorBaseUrl, AuthlibInjectorOfficialBaseUrl })
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var baseUri = UrlSecurity.RequireHttps(baseUrl, nameof(baseUrl));
+                var artifactUri = new Uri(baseUri, "artifact/latest.json");
+                using var response = await _metadataHttpClient.GetAsync(artifactUri, cancellationToken);
+                response.EnsureSuccessStatusCode();
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                return ReadAuthlibInjectorArtifact(document.RootElement, baseUri);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+            }
+        }
+
+        throw new InvalidOperationException("无法获取 authlib-injector 最新版本信息。", lastException);
+    }
+
+    private static AuthlibInjectorArtifact ReadAuthlibInjectorArtifact(JsonElement root, Uri sourceBaseUri)
+    {
+        var downloadUrlText = ReadString(root, "download_url")
+            ?? throw new InvalidDataException("authlib-injector 最新版本信息缺少 download_url。");
+        var version = ReadString(root, "version") ?? "latest";
+        var sha256 = "";
+        if (root.TryGetProperty("checksums", out var checksums))
+        {
+            sha256 = ReadString(checksums, "sha256") ?? "";
+        }
+
+        var downloadUri = ResolveAuthlibInjectorDownloadUri(downloadUrlText, sourceBaseUri);
+        return new AuthlibInjectorArtifact(version, downloadUri, sha256);
+    }
+
+    private static Uri ResolveAuthlibInjectorDownloadUri(string downloadUrl, Uri sourceBaseUri)
+    {
+        var uri = Uri.TryCreate(downloadUrl, UriKind.Absolute, out var absolute)
+            ? absolute
+            : new Uri(sourceBaseUri, downloadUrl.TrimStart('/'));
+
+        UrlSecurity.RequireHttps(uri.ToString(), nameof(downloadUrl));
+        if (!sourceBaseUri.Host.Contains("bangbang93.com", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(uri.Host, sourceBaseUri.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            return uri;
+        }
+
+        var relativePath = uri.AbsolutePath.TrimStart('/');
+        return relativePath.StartsWith("artifact/", StringComparison.OrdinalIgnoreCase)
+            ? new Uri(sourceBaseUri, relativePath)
+            : uri;
+    }
+
     private sealed record LibraryDownload(string LocalPath, string? Url, string? Sha1)
     {
         public static LibraryDownload Empty { get; } = new("", null, null);
     }
+
+    private sealed record AuthlibInjectorArtifact(string Version, Uri DownloadUrl, string Sha256);
 
     private sealed record LaunchPlan(string WorkingDirectory, IReadOnlyList<string> Arguments);
 }

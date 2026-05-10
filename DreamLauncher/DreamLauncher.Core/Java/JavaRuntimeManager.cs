@@ -221,19 +221,24 @@ public sealed partial class JavaRuntimeManager
 
         try
         {
-            await _extractor.ExtractAsync(downloadPath, stagingDirectory, progress, cancellationToken);
-            var javaHome = FindJavaHome(stagingDirectory);
+            await Task.Run(
+                async () =>
+                {
+                    await _extractor.ExtractAsync(downloadPath, stagingDirectory, progress, cancellationToken);
+                    var javaHome = FindJavaHome(stagingDirectory);
 
-            SafeDirectory.DeleteChildDirectory(_paths.JavaRuntimePath, finalDirectory);
-            if (string.Equals(Path.GetFullPath(javaHome), Path.GetFullPath(stagingDirectory), PathComparison))
-            {
-                Directory.Move(stagingDirectory, finalDirectory);
-            }
-            else
-            {
-                Directory.Move(javaHome, finalDirectory);
-                SafeDirectory.DeleteChildDirectory(_paths.JavaRuntimePath, stagingDirectory);
-            }
+                    SafeDirectory.DeleteChildDirectory(_paths.JavaRuntimePath, finalDirectory);
+                    if (string.Equals(Path.GetFullPath(javaHome), Path.GetFullPath(stagingDirectory), PathComparison))
+                    {
+                        Directory.Move(stagingDirectory, finalDirectory);
+                    }
+                    else
+                    {
+                        Directory.Move(javaHome, finalDirectory);
+                        SafeDirectory.DeleteChildDirectory(_paths.JavaRuntimePath, stagingDirectory);
+                    }
+                },
+                cancellationToken);
         }
         catch
         {

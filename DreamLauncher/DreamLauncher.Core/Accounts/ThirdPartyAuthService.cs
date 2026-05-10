@@ -1,9 +1,9 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DreamLauncher.Core.Security;
+using DreamLauncher.Core.Serialization;
 using DreamLauncher.Models.Accounts;
 
 namespace DreamLauncher.Core.Accounts;
@@ -42,7 +42,7 @@ public sealed class ThirdPartyAuthService : IThirdPartyAuthService
         HttpResponseMessage response;
         try
         {
-            response = await _httpClient.PostAsJsonAsync(
+            response = await PostJsonAsync(
                 new Uri(apiRoot, "authserver/authenticate"),
                 payload,
                 cancellationToken);
@@ -106,7 +106,7 @@ public sealed class ThirdPartyAuthService : IThirdPartyAuthService
         HttpResponseMessage response;
         try
         {
-            response = await _httpClient.PostAsJsonAsync(
+            response = await PostJsonAsync(
                 new Uri(apiRoot, "authserver/refresh"),
                 payload,
                 cancellationToken);
@@ -159,7 +159,7 @@ public sealed class ThirdPartyAuthService : IThirdPartyAuthService
 
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync(
+            using var response = await PostJsonAsync(
                 new Uri(apiRoot, "authserver/validate"),
                 payload,
                 cancellationToken);
@@ -308,6 +308,15 @@ public sealed class ThirdPartyAuthService : IThirdPartyAuthService
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(apiRoot.ToString().ToLowerInvariant()));
         return Convert.ToHexString(bytes)[..12].ToLowerInvariant();
+    }
+
+    private async Task<HttpResponseMessage> PostJsonAsync<T>(
+        Uri uri,
+        T payload,
+        CancellationToken cancellationToken)
+    {
+        using var content = new StringContent(LauncherJson.Serialize(payload), Encoding.UTF8, "application/json");
+        return await _httpClient.PostAsync(uri, content, cancellationToken);
     }
 
     private sealed record AuthServerMetadata(string ServerName, string MetadataBase64);

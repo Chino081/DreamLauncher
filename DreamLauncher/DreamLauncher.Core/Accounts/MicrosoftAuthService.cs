@@ -1,11 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
-using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DreamLauncher.Core.Security;
+using DreamLauncher.Core.Serialization;
 using DreamLauncher.Models.Accounts;
 
 namespace DreamLauncher.Core.Accounts;
@@ -373,7 +373,7 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
             identityToken = $"XBL3.0 x={userHash};{xstsToken}"
         };
 
-        using var response = await _httpClient.PostAsJsonAsync(
+        using var response = await PostJsonAsync(
             "https://api.minecraftservices.com/authentication/login_with_xbox",
             payload,
             cancellationToken);
@@ -413,14 +413,22 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
             ReadRequiredString(root, "name"));
     }
 
-    private async Task<HttpResponseMessage> PostXboxJsonAsync(
+    private Task<HttpResponseMessage> PostXboxJsonAsync<T>(
         string url,
-        object payload,
+        T payload,
+        CancellationToken cancellationToken)
+    {
+        return PostJsonAsync(url, payload, cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> PostJsonAsync<T>(
+        string url,
+        T payload,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            Content = new StringContent(LauncherJson.Serialize(payload), Encoding.UTF8, "application/json")
         };
 
         return await _httpClient.SendAsync(request, cancellationToken);

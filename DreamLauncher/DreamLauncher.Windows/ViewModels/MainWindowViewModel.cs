@@ -126,6 +126,7 @@ public sealed class MainWindowViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CurrentAccountName));
                 OnPropertyChanged(nameof(CurrentAccountStatusText));
+                OnPropertyChanged(nameof(CurrentAccountOnlineText));
                 OnPropertyChanged(nameof(CurrentAccountInitial));
                 OnPropertyChanged(nameof(CurrentAccountAvatarUrl));
                 RefreshCurrentAccountAvatar();
@@ -395,13 +396,19 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public string CurrentAccountStatusText => CurrentAccount is null
         ? "请添加账号"
-        : CurrentAccount.Status == AccountLoginStatus.Invalid
+        : CurrentAccount.Status is AccountLoginStatus.Invalid or AccountLoginStatus.RefreshRequired or AccountLoginStatus.Expired
             ? "需要重新登录"
             : AccountManager.IsOfflineAccount(CurrentAccount)
                 ? "离线测试账号"
                 : AccountManager.IsThirdPartyAccount(CurrentAccount)
                     ? $"皮肤站账号 · {CurrentAccount.AuthServerName ?? CurrentAccount.AuthServerUrl}"
                     : "Microsoft 正版账号";
+
+    public string CurrentAccountOnlineText => CurrentAccount is null
+        ? "状态：未登录"
+        : CurrentAccount.Status is AccountLoginStatus.Invalid or AccountLoginStatus.RefreshRequired or AccountLoginStatus.Expired
+            ? "状态：需重登"
+            : "状态：在线";
 
     public string StatusMessage
     {
@@ -548,9 +555,9 @@ public sealed class MainWindowViewModel : ObservableObject
             account = await _accountManager.RefreshAccountAsync(account.Id, cancellationToken);
             CurrentAccount = account;
 
-            if (account.Status == AccountLoginStatus.Invalid)
+            if (account.Status is AccountLoginStatus.Invalid or AccountLoginStatus.RefreshRequired or AccountLoginStatus.Expired)
             {
-                throw new InvalidOperationException("账号已失效，请删除后重新登录。");
+                throw new InvalidOperationException("账号登录已过期，请重新登录账号。");
             }
 
             var tokens = AccountManager.IsOfflineAccount(account)

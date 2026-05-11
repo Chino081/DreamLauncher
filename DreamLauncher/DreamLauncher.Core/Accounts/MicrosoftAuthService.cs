@@ -12,11 +12,12 @@ namespace DreamLauncher.Core.Accounts;
 
 public sealed class MicrosoftAuthService : IMicrosoftAuthService
 {
-    private const string DeviceCodeUrl = "https://login.live.com/oauth20_connect.srf";
-    private const string TokenUrl = "https://login.live.com/oauth20_token.srf";
+    private const string DeviceCodeUrl = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
+    private const string TokenUrl = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+    private const string LegacyTokenUrl = "https://login.live.com/oauth20_token.srf";
     private const string OAuthScope = "XboxLive.signin offline_access";
-    private const string DeviceCodeScope = "service::user.auth.xboxlive.com::MBI_SSL offline_access";
-    private const string DesktopRedirectUrl = "https://login.live.com/oauth20_desktop.srf";
+    private const string DeviceCodeScope = OAuthScope;
+    private const string LegacyOAuthScope = "service::user.auth.xboxlive.com::MBI_SSL offline_access";
     private const string RemoteConnectUrl = "https://login.live.com/oauth20_remoteconnect.srf";
     private readonly HttpClient _httpClient;
     private readonly IBrowserLauncher _browserLauncher;
@@ -166,15 +167,55 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         string refreshToken,
         CancellationToken cancellationToken)
     {
+        Exception? lastException = null;
+
+        foreach (var endpoint in new[]
+                 {
+                     (Url: TokenUrl, Scope: OAuthScope),
+                     (Url: LegacyTokenUrl, Scope: LegacyOAuthScope)
+                 })
+        {
+            try
+            {
+                return await RefreshMicrosoftTokenCoreAsync(
+                    clientId,
+                    refreshToken,
+                    endpoint.Url,
+                    endpoint.Scope,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Microsoft 刷新令牌失败，请重新登录。" +
+            (lastException is null ? "" : Environment.NewLine + lastException.Message),
+            lastException);
+    }
+
+    private async Task<MicrosoftTokens> RefreshMicrosoftTokenCoreAsync(
+        string clientId,
+        string refreshToken,
+        string tokenUrl,
+        string scope,
+        CancellationToken cancellationToken)
+    {
         using var request = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = clientId,
             ["grant_type"] = "refresh_token",
             ["refresh_token"] = refreshToken,
-            ["redirect_uri"] = DesktopRedirectUrl
+            ["scope"] = scope
         });
 
-        using var response = await _httpClient.PostAsync(TokenUrl, request, cancellationToken);
+        using var response = await _httpClient.PostAsync(tokenUrl, request, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -183,7 +224,8 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
 
         using var document = JsonDocument.Parse(body);
 
-        return ReadMicrosoftTokens(document.RootElement);
+        var tokens = ReadMicrosoftTokens(document.RootElement, refreshToken);
+        return tokens;
     }
 
     private async Task<XboxTokenResult> AuthenticateXboxLiveAsync(
@@ -250,8 +292,7 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         using var request = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = clientId,
-            ["scope"] = DeviceCodeScope,
-            ["response_type"] = "device_code"
+            ["scope"] = DeviceCodeScope
         });
 
         using var response = await _httpClient.PostAsync(DeviceCodeUrl, request, cancellationToken);
@@ -289,7 +330,8 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
             {
                 ["client_id"] = clientId,
                 ["device_code"] = deviceCode.DeviceCode,
-                ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
+                ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code",
+                ["scope"] = OAuthScope
             });
 
             using var response = await _httpClient.PostAsync(TokenUrl, request, cancellationToken);
@@ -497,11 +539,13 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         return value.Length <= maxLength ? value : value[..maxLength] + "...";
     }
 
-    private static MicrosoftTokens ReadMicrosoftTokens(JsonElement root)
+    private static MicrosoftTokens ReadMicrosoftTokens(JsonElement root, string? fallbackRefreshToken = null)
     {
         return new MicrosoftTokens(
             ReadRequiredString(root, "access_token"),
-            ReadRequiredString(root, "refresh_token"));
+            ReadOptionalString(root, "refresh_token")
+                ?? fallbackRefreshToken
+                ?? throw new InvalidOperationException("授权响应缺少字段：refresh_token。"));
     }
 
     private static string ReadUserHash(JsonElement root)

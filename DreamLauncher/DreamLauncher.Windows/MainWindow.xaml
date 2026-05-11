@@ -348,7 +348,7 @@
                                                         <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
                                                             <TextBlock Text="{Binding CurrentAccountName}" FontSize="17" FontWeight="Bold" LineHeight="22" TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Text="{Binding CurrentAccountStatusText}" FontSize="12" LineHeight="17" Foreground="{StaticResource TextMuted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="状态：在线" FontSize="12" LineHeight="17" Foreground="{StaticResource Accent}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding CurrentAccountOnlineText}" FontSize="12" LineHeight="17" Foreground="{StaticResource Accent}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
                                                         </StackPanel>
                                                     </Grid>
                                                 </Border>

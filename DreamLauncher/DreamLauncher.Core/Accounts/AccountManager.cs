@@ -101,15 +101,10 @@ public sealed class AccountManager
             return account;
         }
 
-        if (account.Status == AccountLoginStatus.Invalid)
-        {
-            return account;
-        }
-
         var tokens = await _tokenStore.ReadAsync(accountId, cancellationToken);
         if (tokens is null)
         {
-            account.Status = AccountLoginStatus.Invalid;
+            account.Status = AccountLoginStatus.RefreshRequired;
             await _accountProfileStore.SaveAsync(document, cancellationToken);
             return account;
         }
@@ -164,10 +159,14 @@ public sealed class AccountManager
             await _accountProfileStore.SaveAsync(document, cancellationToken);
             return refreshed.Account;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch
         {
-            account.Status = AccountLoginStatus.Invalid;
-            await _tokenStore.DeleteAsync(accountId, cancellationToken);
+            account.Status = AccountLoginStatus.RefreshRequired;
+            account.ExpiresAtUtc = DateTimeOffset.MinValue;
             await _accountProfileStore.SaveAsync(document, cancellationToken);
             return account;
         }

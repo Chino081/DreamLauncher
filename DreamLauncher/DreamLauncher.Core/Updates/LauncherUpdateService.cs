@@ -64,9 +64,13 @@ public sealed class LauncherUpdateService
         var downloadsDirectory = Path.Combine(_paths.DownloadsPath, "launcher");
         Directory.CreateDirectory(downloadsDirectory);
 
+        var extension = update.Manifest.WindowsX64Url.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? "exe"
+            : "zip";
+
         var packagePath = Path.Combine(
             downloadsDirectory,
-            $"DreamLauncher-{SanitizeFileName(update.Manifest.Version)}-win-x64.zip");
+            $"DreamLauncher-{SanitizeFileName(update.Manifest.Version)}-win-x64.{extension}");
 
         await _downloadService.DownloadFileAsync(
             update.Manifest.WindowsX64Url,
@@ -109,13 +113,14 @@ public sealed class LauncherUpdateService
         var updateDirectory = Path.Combine(_paths.CachePath, "updates");
         Directory.CreateDirectory(updateDirectory);
 
+        var isExe = packagePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
         var scriptPath = Path.Combine(updateDirectory, "apply-launcher-update.ps1");
         var stagingDirectory = Path.Combine(updateDirectory, "staging");
         var logPath = Path.Combine(_paths.LogsPath, "launcher-update.log");
 
         await File.WriteAllTextAsync(
             scriptPath,
-            CreateWindowsUpdateScript(),
+            isExe ? CreateWindowsExeUpdateScript() : CreateWindowsZipUpdateScript(),
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             cancellationToken);
 
@@ -143,8 +148,11 @@ public sealed class LauncherUpdateService
         startInfo.ArgumentList.Add(executablePath);
         startInfo.ArgumentList.Add("-ProcessId");
         startInfo.ArgumentList.Add(processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        startInfo.ArgumentList.Add("-StagingDirectory");
-        startInfo.ArgumentList.Add(stagingDirectory);
+        if (!isExe)
+        {
+            startInfo.ArgumentList.Add("-StagingDirectory");
+            startInfo.ArgumentList.Add(stagingDirectory);
+        }
         startInfo.ArgumentList.Add("-LogPath");
         startInfo.ArgumentList.Add(logPath);
 
@@ -198,7 +206,70 @@ public sealed class LauncherUpdateService
         return builder.Length == 0 ? "update" : builder.ToString();
     }
 
-    private static string CreateWindowsUpdateScript()
+    private static string CreateWindowsExeUpdateScript()
+    {
+        return """
+param(
+    [Parameter(Mandatory = $true)][string]$PackagePath,
+    [Parameter(Mandatory = $true)][string]$TargetDirectory,
+    [Parameter(Mandatory = $true)][string]$ExecutablePath,
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][string]$LogPath
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Write-UpdateLog {
+    param([string]$Message)
+    $directory = Split-Path -Parent $LogPath
+    if ($directory -and !(Test-Path -LiteralPath $directory)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    }
+    Add-Content -LiteralPath $LogPath -Value "[$(Get-Date -Format o)] $Message"
+}
+
+try {
+    Write-UpdateLog 'Waiting launcher process to exit.'
+    if ($ProcessId -gt 0) {
+        Wait-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep -Milliseconds 800
+
+    Write-UpdateLog 'Replacing executable directly.'
+    $backupPath = "$ExecutablePath.old"
+    if (Test-Path -LiteralPath $backupPath) {
+        Remove-Item -LiteralPath $backupPath -Force
+    }
+    Rename-Item -LiteralPath $ExecutablePath -NewName (Split-Path -Leaf $backupPath) -Force
+    Copy-Item -LiteralPath $PackagePath -Destination $ExecutablePath -Force
+
+    Remove-Item -LiteralPath $PackagePath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+
+    Write-UpdateLog 'Restarting launcher.'
+    Start-Process -FilePath $ExecutablePath -WorkingDirectory $TargetDirectory
+}
+catch {
+    Write-UpdateLog "Update failed: $($_.Exception.Message)"
+    $backupPath = "$ExecutablePath.old"
+    if ((Test-Path -LiteralPath $backupPath) -and !(Test-Path -LiteralPath $ExecutablePath)) {
+        Rename-Item -LiteralPath $backupPath -NewName (Split-Path -Leaf $ExecutablePath) -Force
+    }
+    try {
+        if (Test-Path -LiteralPath $ExecutablePath) {
+            Start-Process -FilePath $ExecutablePath -WorkingDirectory $TargetDirectory
+        }
+    }
+    catch {
+        Write-UpdateLog "Restart failed: $($_.Exception.Message)"
+    }
+    exit 1
+}
+""";
+    }
+
+    private static string CreateWindowsZipUpdateScript()
     {
         return """
 param(

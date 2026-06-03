@@ -402,8 +402,8 @@
                                             </Grid.RowDefinitions>
                                             <TextBlock Text="客户端列表" FontSize="20" FontWeight="Bold" />
                                             <Border Grid.Row="1" Background="{StaticResource GlassBrushLight}" BorderBrush="#626A80" BorderThickness="1" CornerRadius="18" Padding="12" Margin="0,16,0,0">
-                                                <ListBox ItemsSource="{Binding Clients}"
-                                                         SelectedItem="{Binding SelectedClient, Mode=TwoWay}"
+                                                <ListBox ItemsSource="{Binding DownloadClients}"
+                                                         SelectedItem="{Binding SelectedDownloadClient, Mode=TwoWay}"
                                                          Background="Transparent"
                                                          BorderThickness="0"
                                                          Foreground="{StaticResource TextPrimary}"
@@ -458,10 +458,10 @@
                                         <Border Style="{StaticResource GlassCard}">
                                             <StackPanel>
                                                 <TextBlock Text="当前下载" FontSize="18" FontWeight="Bold" />
-                                                <TextBlock Text="{Binding SelectedClient.Name}" FontSize="14" FontWeight="Bold" Margin="0,14,0,0" />
-                                                <TextBlock Text="{Binding SelectedClient.Version, StringFormat=游戏版本：{0}}" Foreground="{StaticResource TextMuted}" Margin="0,18,0,0" />
-                                                <TextBlock Text="{Binding SelectedClient.LoaderText, StringFormat=客户端版本：{0}}" Foreground="{StaticResource TextMuted}" Margin="0,6,0,0" />
-                                                <TextBlock Text="{Binding SelectedClient.StatusText, StringFormat=状态：{0}}" Foreground="{StaticResource Accent}" Margin="0,6,0,0" />
+                                                <TextBlock Text="{Binding SelectedDownloadClient.Name}" FontSize="14" FontWeight="Bold" Margin="0,14,0,0" />
+                                                <TextBlock Text="{Binding SelectedDownloadClient.Version, StringFormat=游戏版本：{0}}" Foreground="{StaticResource TextMuted}" Margin="0,18,0,0" />
+                                                <TextBlock Text="{Binding SelectedDownloadClient.LoaderText, StringFormat=客户端版本：{0}}" Foreground="{StaticResource TextMuted}" Margin="0,6,0,0" />
+                                                <TextBlock Text="{Binding SelectedDownloadClient.StatusText, StringFormat=状态：{0}}" Foreground="{StaticResource Accent}" Margin="0,6,0,0" />
                                             </StackPanel>
                                         </Border>
 

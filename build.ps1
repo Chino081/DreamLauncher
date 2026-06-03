@@ -24,8 +24,6 @@ function Publish-Project {
     Write-Host "  Output    : $fullOutput"
     Write-Host ""
 
-    Remove-Item -Recurse -Force $fullOutput -ErrorAction SilentlyContinue
-
     dotnet publish $ProjectPath `
         -c Release `
         -f $Framework `

@@ -33,6 +33,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly ISecureTokenStore _tokenStore;
     private readonly MinecraftLaunchService _minecraftLaunchService;
     private ClientInstallationViewModel? _selectedClient;
+    private ClientInstallationViewModel? _selectedDownloadClient;
     private AccountMetadata? _currentAccount;
     private string _statusMessage = "正在准备启动器";
     private string _operationText = "";
@@ -70,6 +71,8 @@ public sealed class MainWindowViewModel : ObservableObject
     }
 
     public ObservableCollection<ClientInstallationViewModel> Clients { get; } = [];
+
+    public ObservableCollection<ClientInstallationViewModel> DownloadClients { get; } = [];
 
     public ObservableCollection<AnnouncementItem> Announcements { get; } = [];
 
@@ -111,6 +114,12 @@ public sealed class MainWindowViewModel : ObservableObject
                 RaiseCommandStates();
             }
         }
+    }
+
+    public ClientInstallationViewModel? SelectedDownloadClient
+    {
+        get => _selectedDownloadClient;
+        set => SetProperty(ref _selectedDownloadClient, value);
     }
 
     public bool HasSelectedClient => SelectedClient is not null;
@@ -469,23 +478,44 @@ public sealed class MainWindowViewModel : ObservableObject
             await LoadAccountsAsync(cancellationToken);
 
             var manifest = await LoadClientsManifestAsync(config, cancellationToken);
-            var installations = await _clientManager.GetInstallationsAsync(manifest.Clients, config, cancellationToken);
-
-            Clients.Clear();
-            foreach (var installation in installations)
-            {
-                Clients.Add(new ClientInstallationViewModel(installation));
-            }
-
-            if (Clients.Count == 0)
-            {
-                Clients.Add(new ClientInstallationViewModel(CreatePlaceholderClient()));
-            }
-
-            SelectedClient = Clients.FirstOrDefault(client => client.Id == config.DefaultClientId) ?? Clients.FirstOrDefault();
+            await LoadLocalVersionClientsAsync(config, cancellationToken);
+            await LoadDownloadClientsAsync(manifest, config, cancellationToken);
             await LoadAnnouncementsAsync(config, manifest, cancellationToken);
             StatusMessage = "启动器已就绪";
         });
+    }
+
+    private async Task LoadLocalVersionClientsAsync(
+        LauncherConfig config,
+        CancellationToken cancellationToken,
+        string? preferredClientId = null)
+    {
+        StatusMessage = "正在读取本地版本列表";
+        var installations = await _clientManager.GetLocalVersionInstallationsAsync(config, cancellationToken);
+        ReplaceClientItems(Clients, installations);
+
+        if (Clients.Count == 0)
+        {
+            Clients.Add(new ClientInstallationViewModel(CreatePlaceholderClient()));
+        }
+
+        var selectedId = preferredClientId ?? SelectedClient?.Id ?? config.DefaultClientId;
+        SelectedClient = Clients.FirstOrDefault(client => string.Equals(client.Id, selectedId, StringComparison.OrdinalIgnoreCase))
+            ?? Clients.FirstOrDefault();
+    }
+
+    private async Task LoadDownloadClientsAsync(
+        RemoteClientsManifest manifest,
+        LauncherConfig config,
+        CancellationToken cancellationToken)
+    {
+        StatusMessage = "正在读取远程下载列表";
+        var installations = await _clientManager.GetInstallationsAsync(manifest.Clients, config, cancellationToken);
+        ReplaceClientItems(DownloadClients, installations);
+
+        var selectedId = SelectedDownloadClient?.Id ?? config.DefaultClientId;
+        SelectedDownloadClient = DownloadClients.FirstOrDefault(client => string.Equals(client.Id, selectedId, StringComparison.OrdinalIgnoreCase))
+            ?? DownloadClients.FirstOrDefault();
     }
 
     private async Task ExecutePrimaryActionAsync()
@@ -511,7 +541,24 @@ public sealed class MainWindowViewModel : ObservableObject
         }
     }
 
-    private async Task InstallSelectedClientAsync(ClientInstallationViewModel selectedClient)
+    public async Task ExecuteDownloadActionAsync(ClientInstallationViewModel selectedClient)
+    {
+        SelectedDownloadClient = selectedClient;
+        switch (selectedClient.Status)
+        {
+            case ClientInstallStatus.NotInstalled:
+            case ClientInstallStatus.UpdateRequired:
+                await InstallSelectedClientAsync(selectedClient, refreshLocalVersions: true);
+                break;
+            case ClientInstallStatus.VerificationFailed:
+                await RepairSelectedClientAsync(selectedClient, refreshLocalVersions: true);
+                break;
+        }
+    }
+
+    private async Task InstallSelectedClientAsync(
+        ClientInstallationViewModel selectedClient,
+        bool refreshLocalVersions = false)
     {
         await RunGuardedAsync(async cancellationToken =>
         {
@@ -522,11 +569,21 @@ public sealed class MainWindowViewModel : ObservableObject
             var progress = CreateProgressReporter(selectedClient);
             await _clientManager.InstallOrUpdateAsync(selectedClient.Installation.Definition, config, progress, cancellationToken);
             selectedClient.SetStatus(ClientInstallStatus.Ready);
+            if (refreshLocalVersions)
+            {
+                await LoadLocalVersionClientsAsync(
+                    config,
+                    cancellationToken,
+                    selectedClient.Installation.Definition.MinecraftVersion);
+            }
+
             StatusMessage = $"{selectedClient.Name} 已就绪";
         });
     }
 
-    private async Task RepairSelectedClientAsync(ClientInstallationViewModel selectedClient)
+    private async Task RepairSelectedClientAsync(
+        ClientInstallationViewModel selectedClient,
+        bool refreshLocalVersions = false)
     {
         await RunGuardedAsync(async cancellationToken =>
         {
@@ -537,6 +594,14 @@ public sealed class MainWindowViewModel : ObservableObject
             var progress = CreateProgressReporter(selectedClient);
             await _clientManager.RepairAsync(selectedClient.Installation.Definition, config, progress, cancellationToken);
             selectedClient.SetStatus(ClientInstallStatus.Ready);
+            if (refreshLocalVersions)
+            {
+                await LoadLocalVersionClientsAsync(
+                    config,
+                    cancellationToken,
+                    selectedClient.Installation.Definition.MinecraftVersion);
+            }
+
             StatusMessage = $"{selectedClient.Name} \u4fee\u590d\u5b8c\u6210";
         });
     }
@@ -709,6 +774,17 @@ public sealed class MainWindowViewModel : ObservableObject
         foreach (var item in source)
         {
             target.Add(new GameContentItemViewModel(item));
+        }
+    }
+
+    private static void ReplaceClientItems(
+        ObservableCollection<ClientInstallationViewModel> target,
+        IEnumerable<ClientInstallation> source)
+    {
+        target.Clear();
+        foreach (var item in source)
+        {
+            target.Add(new ClientInstallationViewModel(item));
         }
     }
 
@@ -906,15 +982,15 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             Definition = new ClientDefinition
             {
-                Id = "configure-source",
-                Name = "暂无客户端",
-                Description = "固定客户端源暂时没有返回可用客户端，请检查网络后刷新。",
+                Id = "local-versions-empty",
+                Name = "暂无本地版本",
+                Description = "运行目录 .minecraft/versions 下还没有可启动的版本 JSON。",
                 Version = "0.0.0",
-                MinecraftVersion = "1.20.1",
-                Loader = "forge",
-                LoaderVersion = "47.x",
-                JavaVersion = 17,
-                ServerAddress = "mc.example.com",
+                MinecraftVersion = "local",
+                Loader = "local",
+                LoaderVersion = "",
+                JavaVersion = 8,
+                ServerAddress = "",
                 DefaultMemoryMb = 4096,
                 Enabled = false
             },

@@ -335,18 +335,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ClientActionButton_Click(object sender, RoutedEventArgs e)
+    private async void ClientActionButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ClientInstallationViewModel client })
         {
             return;
         }
 
-        _viewModel.SelectedClient = client;
-        if (_viewModel.PrimaryActionCommand.CanExecute(null))
-        {
-            _viewModel.PrimaryActionCommand.Execute(null);
-        }
+        await _viewModel.ExecuteDownloadActionAsync(client);
     }
 
     private async void RefreshContent_Click(object sender, RoutedEventArgs e)

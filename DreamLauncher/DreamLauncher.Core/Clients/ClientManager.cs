@@ -86,6 +86,54 @@ public sealed class ClientManager
         return installations;
     }
 
+    public Task<IReadOnlyList<ClientInstallation>> GetLocalVersionInstallationsAsync(
+        LauncherConfig config,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run<IReadOnlyList<ClientInstallation>>(() =>
+        {
+            var installations = new List<ClientInstallation>();
+            var versionsDirectory = Path.Combine(_paths.MinecraftDirectory, "versions");
+            if (!Directory.Exists(versionsDirectory))
+            {
+                return installations;
+            }
+
+            var versionDirectories = Directory
+                .EnumerateDirectories(versionsDirectory, "*", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var versionDirectory in versionDirectories)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!TryResolveVersionJsonPath(versionDirectory, out var versionJsonPath) ||
+                    !TryReadLocalVersionDefinition(versionJsonPath, out var definition))
+                {
+                    continue;
+                }
+
+                var versionJarPath = Path.Combine(versionDirectory, definition.MinecraftVersion + ".jar");
+                if (!File.Exists(versionJarPath))
+                {
+                    continue;
+                }
+
+                var settings = config.ClientSettings.GetValueOrDefault(definition.Id);
+                installations.Add(new ClientInstallation
+                {
+                    Definition = definition,
+                    InstallPath = _paths.ProgramDirectory,
+                    MemoryMb = settings?.MemoryMb ?? definition.DefaultMemoryMb,
+                    JavaPath = settings?.JavaPath,
+                    Status = ClientInstallStatus.Ready
+                });
+            }
+
+            return installations;
+        }, cancellationToken);
+    }
+
     public Task InstallOrUpdateAsync(
         ClientDefinition client,
         LauncherConfig config,
@@ -674,6 +722,219 @@ public sealed class ClientManager
         {
             return null;
         }
+    }
+
+    private static bool TryResolveVersionJsonPath(string versionDirectory, out string versionJsonPath)
+    {
+        versionJsonPath = "";
+        var versionId = Path.GetFileName(versionDirectory.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar));
+        var exactPath = Path.Combine(versionDirectory, versionId + ".json");
+        if (File.Exists(exactPath))
+        {
+            versionJsonPath = exactPath;
+            return true;
+        }
+
+        var candidates = Directory
+            .EnumerateFiles(versionDirectory, "*.json", SearchOption.TopDirectoryOnly)
+            .ToArray();
+        if (candidates.Length != 1)
+        {
+            return false;
+        }
+
+        versionJsonPath = candidates[0];
+        return true;
+    }
+
+    private static bool TryReadLocalVersionDefinition(string versionJsonPath, out ClientDefinition definition)
+    {
+        definition = null!;
+
+        try
+        {
+            using var stream = File.OpenRead(versionJsonPath);
+            using var document = JsonDocument.Parse(stream);
+            var root = document.RootElement;
+            var versionId = ReadString(root, "id") ?? Path.GetFileNameWithoutExtension(versionJsonPath);
+            var mainClass = ReadString(root, "mainClass");
+            if (string.IsNullOrWhiteSpace(versionId) || string.IsNullOrWhiteSpace(mainClass))
+            {
+                return false;
+            }
+
+            var loader = InferLoader(root, versionId, mainClass);
+            definition = new ClientDefinition
+            {
+                Id = versionId,
+                Name = versionId,
+                Description = "本地 Minecraft 版本",
+                Version = versionId,
+                MinecraftVersion = versionId,
+                Loader = loader,
+                LoaderVersion = InferLoaderVersion(root, loader),
+                JavaVersion = ReadJavaMajorVersion(root),
+                DefaultMemoryMb = 4096,
+                Enabled = true
+            };
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static string InferLoader(JsonElement root, string versionId, string mainClass)
+    {
+        var marker = $"{versionId} {mainClass}".ToLowerInvariant();
+        if (marker.Contains("neoforge", StringComparison.Ordinal))
+        {
+            return "neoforge";
+        }
+
+        if (marker.Contains("fabric", StringComparison.Ordinal) ||
+            marker.Contains("fabricmc", StringComparison.Ordinal))
+        {
+            return "fabric";
+        }
+
+        if (marker.Contains("quilt", StringComparison.Ordinal) ||
+            marker.Contains("quiltmc", StringComparison.Ordinal))
+        {
+            return "quilt";
+        }
+
+        if (marker.Contains("forge", StringComparison.Ordinal) ||
+            marker.Contains("fml", StringComparison.Ordinal) ||
+            FindLibraryVersion(root, "net.minecraftforge", "forge") is not null)
+        {
+            return "forge";
+        }
+
+        return "vanilla";
+    }
+
+    private static string InferLoaderVersion(JsonElement root, string loader)
+    {
+        return loader.ToLowerInvariant() switch
+        {
+            "fabric" => FindLibraryVersion(root, "net.fabricmc", "fabric-loader") ?? "",
+            "quilt" => FindLibraryVersion(root, "org.quiltmc", "quilt-loader") ?? "",
+            "neoforge" => ReadGameArgumentValue(root, "--fml.neoForgeVersion")
+                ?? FindLibraryVersion(root, "net.neoforged", "neoforge")
+                ?? "",
+            "forge" => ReadGameArgumentValue(root, "--fml.forgeVersion")
+                ?? FindLibraryVersion(root, "net.minecraftforge", "forge")
+                ?? "",
+            _ => ""
+        };
+    }
+
+    private static int ReadJavaMajorVersion(JsonElement root)
+    {
+        if (root.TryGetProperty("javaVersion", out var javaVersion) &&
+            javaVersion.ValueKind == JsonValueKind.Object &&
+            javaVersion.TryGetProperty("majorVersion", out var majorVersion) &&
+            majorVersion.TryGetInt32(out var value) &&
+            value > 0)
+        {
+            return value;
+        }
+
+        return 8;
+    }
+
+    private static string? ReadGameArgumentValue(JsonElement root, string key)
+    {
+        var arguments = EnumerateArgumentStrings(root, "game").ToArray();
+        for (var index = 0; index < arguments.Length - 1; index++)
+        {
+            if (string.Equals(arguments[index], key, StringComparison.OrdinalIgnoreCase))
+            {
+                return arguments[index + 1];
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateArgumentStrings(JsonElement root, string kind)
+    {
+        if (!root.TryGetProperty("arguments", out var arguments) ||
+            arguments.ValueKind != JsonValueKind.Object ||
+            !arguments.TryGetProperty(kind, out var values) ||
+            values.ValueKind != JsonValueKind.Array)
+        {
+            yield break;
+        }
+
+        foreach (var value in values.EnumerateArray())
+        {
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                yield return value.GetString()!;
+                continue;
+            }
+
+            if (value.ValueKind != JsonValueKind.Object ||
+                !value.TryGetProperty("value", out var argumentValue))
+            {
+                continue;
+            }
+
+            if (argumentValue.ValueKind == JsonValueKind.String)
+            {
+                yield return argumentValue.GetString()!;
+            }
+            else if (argumentValue.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in argumentValue.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        yield return item.GetString()!;
+                    }
+                }
+            }
+        }
+    }
+
+    private static string? FindLibraryVersion(JsonElement root, string groupId, string artifactId)
+    {
+        if (!root.TryGetProperty("libraries", out var libraries) ||
+            libraries.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var library in libraries.EnumerateArray())
+        {
+            var name = ReadString(library, "name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var parts = name.Split(':');
+            if (parts.Length >= 3 &&
+                string.Equals(parts[0], groupId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(parts[1], artifactId, StringComparison.OrdinalIgnoreCase))
+            {
+                return parts[2];
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
     }
 
     private bool HasRequiredClientFiles(ClientDefinition client)

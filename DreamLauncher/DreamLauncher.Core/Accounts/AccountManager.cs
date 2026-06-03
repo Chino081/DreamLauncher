@@ -138,6 +138,7 @@ public sealed class AccountManager
         if (tokens.ExpiresAtUtc > DateTimeOffset.UtcNow.AddMinutes(5))
         {
             account.Status = AccountLoginStatus.Available;
+            account.ExpiresAtUtc = tokens.ExpiresAtUtc;
             await _accountProfileStore.SaveAsync(document, cancellationToken);
             return account;
         }

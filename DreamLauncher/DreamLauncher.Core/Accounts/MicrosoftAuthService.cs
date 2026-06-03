@@ -12,6 +12,8 @@ namespace DreamLauncher.Core.Accounts;
 
 public sealed class MicrosoftAuthService : IMicrosoftAuthService
 {
+    private static readonly JsonSerializerOptions XboxJsonOptions = new();
+
     private const string DeviceCodeUrl = "https://login.live.com/oauth20_connect.srf";
     private const string TokenUrl = "https://login.live.com/oauth20_token.srf";
     private const string OAuthScope = "service::user.auth.xboxlive.com::MBI_SSL offline_access";
@@ -419,17 +421,21 @@ public sealed class MicrosoftAuthService : IMicrosoftAuthService
         T payload,
         CancellationToken cancellationToken)
     {
-        return PostJsonAsync(url, payload, cancellationToken);
+        return PostJsonAsync(url, payload, cancellationToken, XboxJsonOptions);
     }
 
     private async Task<HttpResponseMessage> PostJsonAsync<T>(
         string url,
         T payload,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? options = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
-            Content = new StringContent(LauncherJson.Serialize(payload), Encoding.UTF8, "application/json")
+            Content = new StringContent(
+                options is null ? LauncherJson.Serialize(payload) : JsonSerializer.Serialize(payload, options),
+                Encoding.UTF8,
+                "application/json")
         };
 
         return await _httpClient.SendAsync(request, cancellationToken);

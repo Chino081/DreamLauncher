@@ -112,6 +112,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(HasSelectedClient));
                 OnPropertyChanged(nameof(SelectedClientName));
                 RaiseCommandStates();
+                _ = PersistSelectedClientAsync(value);
             }
         }
     }
@@ -974,6 +975,33 @@ public sealed class MainWindowViewModel : ObservableObject
         (PrimaryActionCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         (AddAccountCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         CancelCommand.RaiseCanExecuteChanged();
+    }
+
+    private async Task PersistSelectedClientAsync(ClientInstallationViewModel? selectedClient)
+    {
+        if (selectedClient is null ||
+            selectedClient.Status == ClientInstallStatus.Disabled ||
+            !selectedClient.Installation.Definition.Enabled ||
+            string.IsNullOrWhiteSpace(selectedClient.Id))
+        {
+            return;
+        }
+
+        try
+        {
+            var config = await _configStore.LoadAsync();
+            if (string.Equals(config.DefaultClientId, selectedClient.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            config.DefaultClientId = selectedClient.Id;
+            await _configStore.SaveAsync(config);
+        }
+        catch
+        {
+            // Selection persistence is best-effort; launching should not be blocked by a config write failure.
+        }
     }
 
     private static ClientInstallation CreatePlaceholderClient()

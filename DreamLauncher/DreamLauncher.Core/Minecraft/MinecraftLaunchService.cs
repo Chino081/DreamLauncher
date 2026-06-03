@@ -92,6 +92,9 @@ public sealed class MinecraftLaunchService
 
         process.OutputDataReceived += (_, args) => AppendLogLine(logPath, args.Data);
         process.ErrorDataReceived += (_, args) => AppendLogLine(logPath, args.Data);
+        process.EnableRaisingEvents = true;
+        process.Exited += (_, _) =>
+            AppendLogLine(logPath, $"[PROC] Minecraft process exited. ExitCode={ReadExitCode(process)}");
 
         if (!process.Start())
         {
@@ -100,6 +103,13 @@ public sealed class MinecraftLaunchService
 
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
+        AppendLogLine(logPath, $"[PROC] Minecraft process started. PID={process.Id}");
+
+        await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
+        if (process.HasExited)
+        {
+            throw new InvalidOperationException($"Minecraft exited immediately. ExitCode={ReadExitCode(process)}. Launch log: {logPath}");
+        }
 
         return new MinecraftLaunchResult
         {
@@ -117,16 +127,11 @@ public sealed class MinecraftLaunchService
 
         if (string.Equals(javaPath, "java", StringComparison.OrdinalIgnoreCase))
         {
-            return "javaw";
+            return "java";
         }
 
         var fileName = Path.GetFileName(javaPath);
-        if (string.Equals(fileName, "javaw.exe", StringComparison.OrdinalIgnoreCase))
-        {
-            return javaPath;
-        }
-
-        if (!string.Equals(fileName, "java.exe", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(fileName, "javaw.exe", StringComparison.OrdinalIgnoreCase))
         {
             return javaPath;
         }
@@ -137,8 +142,20 @@ public sealed class MinecraftLaunchService
             return javaPath;
         }
 
-        var javawPath = Path.Combine(directory, "javaw.exe");
-        return File.Exists(javawPath) ? javawPath : javaPath;
+        var consoleJavaPath = Path.Combine(directory, "java.exe");
+        return File.Exists(consoleJavaPath) ? consoleJavaPath : javaPath;
+    }
+
+    private static int? ReadExitCode(Process process)
+    {
+        try
+        {
+            return process.HasExited ? process.ExitCode : null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static void AppendLogLine(string logPath, string? line)
@@ -178,6 +195,7 @@ public sealed class MinecraftLaunchService
         var assetIndex = ReadAssetIndex(root);
         var librariesDirectory = Path.Combine(minecraftDirectory, "libraries");
         var classpath = BuildClasspath(minecraftDirectory, versionId, root);
+        var primaryJarName = BuildPrimaryJarName(versionId, root);
 
         if (classpath.Count == 0)
         {
@@ -220,7 +238,8 @@ public sealed class MinecraftLaunchService
             ["natives_directory"] = nativesDirectory,
             ["library_directory"] = librariesDirectory,
             ["classpath_separator"] = Path.PathSeparator.ToString(),
-            ["classpath"] = string.Join(Path.PathSeparator, classpath)
+            ["classpath"] = string.Join(Path.PathSeparator, classpath),
+            ["primary_jar_name"] = primaryJarName
         };
 
         var arguments = new List<string>
@@ -327,6 +346,8 @@ public sealed class MinecraftLaunchService
     private static List<string> BuildClasspath(string minecraftDirectory, string versionId, JsonElement root)
     {
         var classpath = new List<string>();
+        var seenLibraries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenPaths = CreatePathSet();
         var librariesDirectory = Path.Combine(minecraftDirectory, "libraries");
 
         if (root.TryGetProperty("libraries", out var libraries) && libraries.ValueKind == JsonValueKind.Array)
@@ -361,18 +382,73 @@ public sealed class MinecraftLaunchService
 
                 if (File.Exists(fullPath))
                 {
-                    classpath.Add(fullPath);
+                    var libraryName = ReadString(library, "name");
+                    if (libraryName is not null && !seenLibraries.Add(libraryName))
+                    {
+                        continue;
+                    }
+
+                    AddClasspathEntry(classpath, seenPaths, fullPath);
                 }
             }
         }
 
-        var clientJar = Path.Combine(minecraftDirectory, "versions", versionId, versionId + ".jar");
-        if (File.Exists(clientJar))
+        if (FindClientJarPath(minecraftDirectory, versionId, root) is { } clientJar)
         {
-            classpath.Add(clientJar);
+            AddClasspathEntry(classpath, seenPaths, clientJar);
         }
 
         return classpath;
+    }
+
+    private static HashSet<string> CreatePathSet()
+    {
+        return new HashSet<string>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    }
+
+    private static void AddClasspathEntry(ICollection<string> classpath, ISet<string> seenPaths, string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (seenPaths.Add(fullPath))
+        {
+            classpath.Add(fullPath);
+        }
+    }
+
+    private static string? FindClientJarPath(string minecraftDirectory, string versionId, JsonElement root)
+    {
+        var versionsDirectory = Path.Combine(minecraftDirectory, "versions");
+        var candidates = new List<string>
+        {
+            Path.Combine(versionsDirectory, versionId, versionId + ".jar")
+        };
+
+        if (ReadString(root, "jar") is { } jarId && !string.IsNullOrWhiteSpace(jarId))
+        {
+            var normalizedJarId = Path.GetFileNameWithoutExtension(jarId.Trim());
+            if (!string.IsNullOrWhiteSpace(normalizedJarId))
+            {
+                candidates.Add(Path.Combine(versionsDirectory, normalizedJarId, normalizedJarId + ".jar"));
+                candidates.Add(Path.Combine(versionsDirectory, versionId, normalizedJarId + ".jar"));
+            }
+        }
+
+        return candidates
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .FirstOrDefault(File.Exists);
+    }
+
+    private static string BuildPrimaryJarName(string versionId, JsonElement root)
+    {
+        var jarId = ReadString(root, "jar");
+        var jarName = string.IsNullOrWhiteSpace(jarId)
+            ? versionId
+            : Path.GetFileName(jarId.Trim());
+
+        return jarName.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)
+            ? jarName
+            : jarName + ".jar";
     }
 
     private static string? BuildLibraryPathFromName(JsonElement library)

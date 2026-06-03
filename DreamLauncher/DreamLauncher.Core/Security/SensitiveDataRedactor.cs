@@ -13,6 +13,7 @@ public static partial class SensitiveDataRedactor
 
         var redacted = TokenQueryRegex().Replace(value, "$1=<redacted>");
         redacted = TokenJsonRegex().Replace(redacted, "$1\"<redacted>\"");
+        redacted = TokenArgumentRegex().Replace(redacted, "$1<redacted>");
         return redacted;
     }
 
@@ -21,4 +22,7 @@ public static partial class SensitiveDataRedactor
 
     [GeneratedRegex(@"(?i)(""(?:access_token|refresh_token|id_token|minecraftAccessToken|xstsToken|minecraft_access_token|xsts_token)""\s*:\s*)"".*?""")]
     private static partial Regex TokenJsonRegex();
+
+    [GeneratedRegex(@"(?i)(--(?:accessToken|access_token|refreshToken|refresh_token|idToken|id_token|minecraftAccessToken|minecraft_access_token|xstsToken|xsts_token)\s+)(?:""[^""]*""|\S+)")]
+    private static partial Regex TokenArgumentRegex();
 }

@@ -1,13 +1,12 @@
 # DreamLauncher
 
-DreamLauncher 是一个面向 Minecraft 服务器的专属启动器。首发目标是 Windows WPF，核心逻辑独立在 `DreamLauncher.Core`，同时提供 `DreamLauncher.Avalonia` 版本，方便后续扩展到 macOS / Linux。
+DreamLauncher 是一个面向 Minecraft 服务器的专属 Windows WPF 启动器，核心逻辑独立在 `DreamLauncher.Core`。
 
 启动器本体不内置大型客户端资源。客户端包、Java Runtime、公告、更新清单等都从远程配置或 CDN 获取；下载后会做 SHA256 校验，解压时会防 Zip Slip 路径穿越。
 
 ## 当前状态
 
 - Windows WPF：主版本，已接入登录、客户端下载/更新、Java 管理、游戏启动、资源管理、设置、自动更新。
-- Avalonia：跨平台版本，已复用 Core 逻辑，并补齐启动、下载、设置、资源管理等主要页面。
 - Core：负责远程配置、下载、解压、校验、Java 管理、账号管理、Minecraft 启动参数生成、资源包/光影包/Mod 管理。
 - Models：共享数据模型。
 
@@ -34,12 +33,6 @@ DreamtcTamracLauncherNew/
     DreamLauncher.Models/
     DreamLauncher.Core/
     DreamLauncher.Windows/
-      Accounts/
-      Assets/
-      Dialogs/
-      Security/
-      ViewModels/
-    DreamLauncher.Avalonia/
       Accounts/
       Assets/
       Dialogs/
@@ -139,11 +132,11 @@ Java 启动优先级：
 - 启动前检查账号、客户端、Java。
 - 支持启动后自动连接服务器。
 - 成功启动游戏后关闭启动器。
-- Windows / Linux / macOS 会按当前系统和架构选择对应 natives，避免跨系统 natives 混用。
+- Windows 会按当前系统和架构选择对应 natives，避免架构不匹配。
 
 ### 资源管理
 
-Windows 与 Avalonia 都已接入资源页。
+Windows WPF 已接入资源页。
 
 资源页包含三个子页签：
 
@@ -344,17 +337,10 @@ dotnet build .\DreamLauncher.slnx -c Debug
 dotnet run --project .\DreamLauncher\DreamLauncher.Windows\DreamLauncher.Windows.csproj
 ```
 
-运行 Avalonia 版：
-
-```powershell
-dotnet run --project .\DreamLauncher\DreamLauncher.Avalonia\DreamLauncher.Avalonia.csproj
-```
-
 直接运行已构建 exe：
 
 ```text
-DreamLauncher/DreamLauncher.Windows/bin/Debug/net10.0-windows/DreamLauncher.Windows.exe
-DreamLauncher/DreamLauncher.Avalonia/bin/Debug/net10.0/DreamLauncher.Avalonia.exe
+DreamLauncher/DreamLauncher.Windows/bin/Debug/net10.0-windows/DreamLauncher.exe
 ```
 
 ## 发布
@@ -371,13 +357,10 @@ Windows 自包含单文件发布：
 dotnet publish .\DreamLauncher\DreamLauncher.Windows\DreamLauncher.Windows.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
-Avalonia 可按目标平台发布，例如：
+也可以使用项目打包脚本发布 Windows x64：
 
 ```powershell
-dotnet publish .\DreamLauncher\DreamLauncher.Avalonia\DreamLauncher.Avalonia.csproj -c Release -r win-x64 --self-contained true
-dotnet publish .\DreamLauncher\DreamLauncher.Avalonia\DreamLauncher.Avalonia.csproj -c Release -r linux-x64 --self-contained true
-dotnet publish .\DreamLauncher\DreamLauncher.Avalonia\DreamLauncher.Avalonia.csproj -c Release -r osx-x64 --self-contained true
-dotnet publish .\DreamLauncher\DreamLauncher.Avalonia\DreamLauncher.Avalonia.csproj -c Release -r osx-arm64 --self-contained true
+.\build.bat
 ```
 
 ## 安全约束

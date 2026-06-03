@@ -264,7 +264,7 @@ public partial class MainWindow : Window
             return Environment.ProcessPath;
         }
 
-        var appHostPath = Path.Combine(AppContext.BaseDirectory, "DreamLauncher.Windows.exe");
+        var appHostPath = Path.Combine(AppContext.BaseDirectory, "DreamLauncher.exe");
         if (File.Exists(appHostPath))
         {
             return appHostPath;

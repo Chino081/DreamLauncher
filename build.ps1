@@ -1,6 +1,6 @@
 param(
-    [ValidateSet("win-x64", "linux-x64", "all")]
-    [string]$Target = "all"
+    [ValidateSet("win-x64")]
+    [string]$Target = "win-x64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,26 +45,12 @@ function Publish-Project {
     Write-Host ""
 }
 
-if ($Target -eq "all" -or $Target -eq "win-x64") {
+if ($Target -eq "win-x64") {
     Publish-Project `
         -ProjectPath "DreamLauncher/DreamLauncher.Windows/DreamLauncher.Windows.csproj" `
         -Framework "net10.0-windows" `
         -Runtime "win-x64" `
-        -OutputDir "dist/win-x64"
-
-    Publish-Project `
-        -ProjectPath "DreamLauncher/DreamLauncher.Avalonia/DreamLauncher.Avalonia.csproj" `
-        -Framework "net10.0" `
-        -Runtime "win-x64" `
-        -OutputDir "dist/win-x64-avalonia"
-}
-
-if ($Target -eq "all" -or $Target -eq "linux-x64") {
-    Publish-Project `
-        -ProjectPath "DreamLauncher/DreamLauncher.Avalonia/DreamLauncher.Avalonia.csproj" `
-        -Framework "net10.0" `
-        -Runtime "linux-x64" `
-        -OutputDir "dist/linux-x64"
+        -OutputDir "dist"
 }
 
 Write-Host "=== Build complete ===" -ForegroundColor Cyan

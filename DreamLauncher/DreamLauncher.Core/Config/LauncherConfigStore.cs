@@ -7,13 +7,13 @@ namespace DreamLauncher.Core.Config;
 public sealed class LauncherConfigStore
 {
     public const string FixedClientsManifestUrl =
-        "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/clients.json";
+        "https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/clients.json";
 
     public const string FixedJavaRuntimesManifestUrl =
-        "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/java-runtimes.json";
+        "https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/java-runtimes.json";
 
     public const string FixedAnnouncementUrl =
-        "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/announcement.json";
+        "https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/announcement.json";
 
     private readonly LauncherPaths _paths;
     private readonly SemaphoreSlim _gate = new(1, 1);

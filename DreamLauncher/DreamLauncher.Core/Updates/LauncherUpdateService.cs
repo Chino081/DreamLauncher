@@ -10,7 +10,7 @@ namespace DreamLauncher.Core.Updates;
 public sealed class LauncherUpdateService
 {
     public const string FixedLauncherUpdateManifestUrl =
-        "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/launcher-update.json";
+        "https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/launcher-update.json";
 
     private readonly LauncherPaths _paths;
     private readonly RemoteConfigClient _remoteConfigClient;

@@ -74,10 +74,10 @@ Windows 版敏感令牌优先写入 Windows Credential Manager。日志会对 to
 当前启动器会强制使用以下配置地址：
 
 ```text
-https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/clients.json
-https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/java-runtimes.json
-https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/announcement.json
-https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/launcher-update.json
+https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/clients.json
+https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/java-runtimes.json
+https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/announcement.json
+https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/launcher-update.json
 ```
 
 即使本地 `config.json` 写了其他地址，读取或保存配置时也会自动修正回上面的固定地址。
@@ -186,8 +186,8 @@ Windows WPF 已接入资源页。
 ```json
 {
   "launcherVersion": "0.1.0",
-  "announcementUrl": "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/announcement.json",
-  "javaRuntimesUrl": "https://raw.giteeusercontent.com/Chino7/DreamLauncher/raw/master/local-cdn/java-runtimes.json",
+  "announcementUrl": "https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/announcement.json",
+  "javaRuntimesUrl": "https://raw.gitcode.com/Chino0812/DreamLauncher/raw/master/local-cdn/java-runtimes.json",
   "clients": [
     {
       "id": "survival",

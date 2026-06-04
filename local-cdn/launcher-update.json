@@ -1,8 +1,8 @@
 {
   "enabled": true,
-  "version": "0.1.1",
+  "version": "0.1.0",
   "title": "启动器更新",
-  "notes": "当前测试版本暂无更新。发布新版本时，把 version 改成更高版本，并填写真实 Windows x64 更新包地址、SHA256 和大小。",
+  "notes": "启动器版本更新",
   "mandatory": false,
   "windowsX64Url": "https://gitcode.com/Chino0812/DreamLauncher/releases/download/latest/DreamLauncher.exe",
   "windowsX64Sha256": "5663f64606f834255126cacce8b2b183815cf18bfc08a48dae3721caaab6a4d8",

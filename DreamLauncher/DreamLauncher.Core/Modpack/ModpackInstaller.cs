@@ -17,19 +17,22 @@ public sealed class ModpackInstaller
     private readonly SafeZipExtractor _extractor;
     private readonly CurseForgeApiClient _curseForgeClient;
     private readonly GameInstaller _gameInstaller;
+    private readonly DownloadSource _source;
 
     public ModpackInstaller(
         LauncherPaths paths,
         HttpDownloadService downloadService,
         SafeZipExtractor extractor,
         GameInstaller gameInstaller,
+        DownloadSource source = DownloadSource.Bmclapi,
         CurseForgeApiClient? curseForgeClient = null)
     {
         _paths = paths;
         _downloadService = downloadService;
         _extractor = extractor;
         _gameInstaller = gameInstaller;
-        _curseForgeClient = curseForgeClient ?? new CurseForgeApiClient();
+        _source = source;
+        _curseForgeClient = curseForgeClient ?? new CurseForgeApiClient(source: source);
     }
 
     public async Task InstallAsync(
@@ -55,7 +58,7 @@ public sealed class ModpackInstaller
             Progress = 0
         });
 
-        var modpack = ModpackParser.DetectAndParse(modpackFilePath);
+        var modpack = ModpackParser.DetectAndParse(modpackFilePath, _source);
 
         progress?.Report(new LauncherOperationProgress
         {
@@ -339,9 +342,21 @@ public sealed class ModpackInstaller
                         Progress = 0.3 + 0.65 * ((double)done / total)
                     });
                 }
-            });
+            }).ToList();
 
-            await Task.WhenAll(tasks);
+            try
+            {
+                await Task.WhenAll(tasks);
+            }
+            catch
+            {
+                foreach (var task in tasks)
+                {
+                    try { await task; } catch { /* ignored */ }
+                }
+
+                throw;
+            }
         }
         finally
         {

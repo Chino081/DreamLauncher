@@ -797,11 +797,15 @@
                                                             <RowDefinition Height="Auto" />
                                                             <RowDefinition Height="12" />
                                                             <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="12" />
+                                                            <RowDefinition Height="Auto" />
                                                         </Grid.RowDefinitions>
-                                                        <TextBlock Text="失败重试次数" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="MainMaxRetryCountTextBox" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
-                                                        <TextBlock Grid.Row="2" Text="下载限速 KB/s" VerticalAlignment="Center" />
-                                                        <TextBox x:Name="MainSpeedLimitTextBox" Grid.Row="2" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
+                                                        <TextBlock Text="下载源" VerticalAlignment="Center" />
+                                                        <ComboBox x:Name="DownloadSourceComboBox" Grid.Column="1" DisplayMemberPath="DisplayName" SelectedValuePath="Value" />
+                                                        <TextBlock Grid.Row="2" Text="失败重试次数" VerticalAlignment="Center" />
+                                                        <TextBox x:Name="MainMaxRetryCountTextBox" Grid.Row="2" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
+                                                        <TextBlock Grid.Row="4" Text="下载限速 KB/s" VerticalAlignment="Center" />
+                                                        <TextBox x:Name="MainSpeedLimitTextBox" Grid.Row="4" Grid.Column="1" Style="{StaticResource LauncherTextBox}" />
                                                     </Grid>
                                                 </Border>
 

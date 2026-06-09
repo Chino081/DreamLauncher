@@ -2,13 +2,17 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DreamLauncher.Core.Downloads;
+using DreamLauncher.Models.Config;
 using DreamLauncher.Models.Modpack;
 
 namespace DreamLauncher.Core.Modpack;
 
 public static class ModpackParser
 {
-    public static ModpackInfo DetectAndParse(string archivePath)
+    public static ModpackInfo DetectAndParse(
+        string archivePath,
+        DownloadSource source = DownloadSource.Bmclapi)
     {
         if (!File.Exists(archivePath))
         {
@@ -19,12 +23,12 @@ public static class ModpackParser
 
         if (TryDetectModrinth(archive, out var baseFolder))
         {
-            return ParseModrinth(archive, baseFolder);
+            return ParseModrinth(archive, baseFolder, source);
         }
 
         if (TryDetectCurseForge(archive, out baseFolder))
         {
-            return ParseCurseForge(archive, baseFolder);
+            return ParseCurseForge(archive, baseFolder, source);
         }
 
         throw new InvalidDataException("无法识别的整合包格式。支持 Modrinth (.mrpack) 和 CurseForge 格式。");
@@ -84,7 +88,8 @@ public static class ModpackParser
         return false;
     }
 
-    private static ModpackInfo ParseModrinth(ZipArchive archive, string baseFolder)
+    private static ModpackInfo ParseModrinth(
+        ZipArchive archive, string baseFolder, DownloadSource source)
     {
         var entry = archive.GetEntry(baseFolder + "modrinth.index.json")
             ?? throw new InvalidDataException("找不到 modrinth.index.json。");
@@ -126,7 +131,7 @@ public static class ModpackParser
             }
 
             var hashes = fileObj["hashes"]?.AsObject();
-            var allUrls = BuildModrinthDownloadUrls(urls);
+            var allUrls = BuildModrinthDownloadUrls(urls, source);
             files.Add(new ModpackFileEntry
             {
                 RelativePath = path.Replace('\\', '/'),
@@ -150,7 +155,8 @@ public static class ModpackParser
         };
     }
 
-    private static ModpackInfo ParseCurseForge(ZipArchive archive, string baseFolder)
+    private static ModpackInfo ParseCurseForge(
+        ZipArchive archive, string baseFolder, DownloadSource source)
     {
         var entry = archive.GetEntry(baseFolder + "manifest.json")
             ?? throw new InvalidDataException("找不到 manifest.json。");
@@ -279,57 +285,41 @@ public static class ModpackParser
         return ZipFile.Open(archivePath, ZipArchiveMode.Read, encoding);
     }
 
-    private static List<string> BuildModrinthDownloadUrls(string[] originalUrls)
+    private static List<string> BuildModrinthDownloadUrls(
+        string[] originalUrls, DownloadSource source)
     {
         var allUrls = new List<string>();
 
         foreach (var url in originalUrls)
         {
-            // Add original URL
-            allUrls.Add(url);
+            // Fix CurseForge CDN issues
+            var corrected = url
+                .Replace("-service.overwolf.wtf", ".forgecdn.net")
+                .Replace("://media.", "://edge.");
 
-            // Add corrected URL (for CurseForge CDN issues)
-            var corrected = CorrectCurseForgeUrl(url);
-            if (!string.Equals(corrected, url, StringComparison.OrdinalIgnoreCase))
+            // Primary: convert to selected source
+            var primary = DownloadSourceUrls.ConvertModrinthUrl(source, corrected);
+            allUrls.Add(primary);
+
+            // Fallback: the other source
+            var fallbackSource = source == DownloadSource.Official
+                ? DownloadSource.Bmclapi
+                : DownloadSource.Official;
+            var fallback = DownloadSourceUrls.ConvertModrinthUrl(fallbackSource, corrected);
+            if (!string.Equals(fallback, primary, StringComparison.OrdinalIgnoreCase))
             {
-                allUrls.Add(corrected);
+                allUrls.Add(fallback);
             }
 
-            // Add mirror URL
-            var mirror = ToMirrorUrl(corrected);
-            if (!string.Equals(mirror, corrected, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(mirror, url, StringComparison.OrdinalIgnoreCase))
+            // Add original if different
+            if (!string.Equals(url, primary, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(url, fallback, StringComparison.OrdinalIgnoreCase))
             {
-                allUrls.Add(mirror);
+                allUrls.Add(url);
             }
         }
 
         return allUrls;
-    }
-
-    private static string CorrectCurseForgeUrl(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return url;
-        }
-
-        return url
-            .Replace("-service.overwolf.wtf", ".forgecdn.net")
-            .Replace("://media.", "://edge.");
-    }
-
-    private static string ToMirrorUrl(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return url;
-        }
-
-        return url
-            .Replace("cdn.modrinth.com", "mod.mcimirror.top")
-            .Replace("edge.forgecdn.net", "mod.mcimirror.top")
-            .Replace("mediafilez.forgecdn.net", "mod.mcimirror.top");
     }
 
     private static JsonObject ReadJsonObject(Stream stream)

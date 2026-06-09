@@ -4,29 +4,18 @@ using DreamLauncher.Core.Archives;
 using DreamLauncher.Core.Config;
 using DreamLauncher.Core.Downloads;
 using DreamLauncher.Core.Security;
+using DreamLauncher.Models.Config;
 using DreamLauncher.Models.Operations;
 
 namespace DreamLauncher.Core.Minecraft;
 
 public sealed class GameInstaller
 {
-    private const string ManifestUrl =
-        "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json";
-
-    private const string LibraryBaseUrl = "https://bmclapi2.bangbang93.com/maven/";
-    private const string AssetBaseUrl = "https://bmclapi2.bangbang93.com/assets/";
-
     private const string FabricMetaUrl =
         "https://meta.fabricmc.net/v2/versions/loader/{0}/{1}/profile/json";
 
     private const string QuiltMetaUrl =
         "https://meta.quiltmc.org/v3/versions/loader/{0}/{1}/profile/json";
-
-    private const string ForgeInstallerUrl =
-        "https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/{0}/forge-{0}-installer.jar";
-
-    private const string NeoForgeInstallerUrl =
-        "https://bmclapi2.bangbang93.com/maven/net/neoforged/neoforge/{0}/neoforge-{0}-installer.jar";
 
     private static readonly HttpClient SharedHttpClient = new()
     {
@@ -35,11 +24,14 @@ public sealed class GameInstaller
 
     private readonly LauncherPaths _paths;
     private readonly HttpDownloadService _downloadService;
+    private readonly DownloadSource _source;
 
-    public GameInstaller(LauncherPaths paths, HttpDownloadService downloadService)
+    public GameInstaller(LauncherPaths paths, HttpDownloadService downloadService,
+        DownloadSource source = DownloadSource.Bmclapi)
     {
         _paths = paths;
         _downloadService = downloadService;
+        _source = source;
     }
 
     public async Task InstallAsync(
@@ -163,7 +155,8 @@ public sealed class GameInstaller
     private async Task<string> GetVersionJsonUrlAsync(
         string minecraftVersion, CancellationToken cancellationToken)
     {
-        var manifest = await FetchJsonObjectAsync(ManifestUrl, cancellationToken);
+        var manifestUrl = DownloadSourceUrls.GetManifestUrl(_source);
+        var manifest = await FetchJsonObjectAsync(manifestUrl, cancellationToken);
 
         foreach (var version in manifest["versions"]?.AsArray() ?? [])
         {
@@ -172,7 +165,7 @@ public sealed class GameInstaller
                 var url = version["url"]?.ToString();
                 if (!string.IsNullOrWhiteSpace(url))
                 {
-                    return ToBmclapiUrl(url);
+                    return DownloadSourceUrls.ConvertUrl(_source, url);
                 }
             }
         }
@@ -205,7 +198,7 @@ public sealed class GameInstaller
             ?? throw new InvalidDataException("版本 jar 下载地址缺失。");
         var sha1 = clientInfo["sha1"]?.ToString() ?? "";
 
-        jarUrl = ToBmclapiUrl(jarUrl);
+        jarUrl = DownloadSourceUrls.ConvertUrl(_source, jarUrl);
 
         if (!string.IsNullOrWhiteSpace(sha1))
         {
@@ -257,7 +250,7 @@ public sealed class GameInstaller
                 if (!File.Exists(targetPath))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                    items.Add((ToBmclapiUrl(url), targetPath, sha1));
+                    items.Add((DownloadSourceUrls.ConvertUrl(_source, url), targetPath, sha1));
                 }
             }
         }
@@ -305,9 +298,22 @@ public sealed class GameInstaller
                     Progress = 0.2 + 0.2 * ((double)done / total)
                 });
             }
-        });
+        }).ToList();
 
-        await Task.WhenAll(tasks);
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch
+        {
+            // Ensure all tasks complete before semaphore is disposed
+            foreach (var task in tasks)
+            {
+                try { await task; } catch { /* ignored */ }
+            }
+
+            throw;
+        }
     }
 
     private async Task DownloadAssetsAsync(
@@ -326,7 +332,7 @@ public sealed class GameInstaller
             return;
         }
 
-        assetIndexUrl = ToBmclapiUrl(assetIndexUrl);
+        assetIndexUrl = DownloadSourceUrls.ConvertUrl(_source, assetIndexUrl);
 
         var assetIndexesDir = Path.Combine(assetsDir, "indexes");
         Directory.CreateDirectory(assetIndexesDir);
@@ -371,7 +377,8 @@ public sealed class GameInstaller
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            items.Add(($"{AssetBaseUrl}{subDir}/{hash}", targetPath, hash));
+            var assetBaseUrl = DownloadSourceUrls.GetAssetBaseUrl(_source);
+            items.Add(($"{assetBaseUrl}{subDir}/{hash}", targetPath, hash));
         }
 
         if (items.Count == 0)
@@ -411,9 +418,21 @@ public sealed class GameInstaller
                     });
                 }
             }
-        });
+        }).ToList();
 
-        await Task.WhenAll(tasks);
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch
+        {
+            foreach (var task in tasks)
+            {
+                try { await task; } catch { /* ignored */ }
+            }
+
+            throw;
+        }
     }
 
     private async Task<JsonObject?> GetLoaderJsonAsync(
@@ -496,8 +515,8 @@ public sealed class GameInstaller
         CancellationToken cancellationToken)
     {
         var installerUrl = string.Equals(loader, "neoforge", StringComparison.OrdinalIgnoreCase)
-            ? string.Format(NeoForgeInstallerUrl, loaderVersion)
-            : string.Format(ForgeInstallerUrl, loaderVersion);
+            ? DownloadSourceUrls.GetNeoForgeInstallerUrl(_source, loaderVersion)
+            : DownloadSourceUrls.GetForgeInstallerUrl(_source, loaderVersion);
 
         var installerDir = Path.Combine(_paths.CachePath, "installers");
         Directory.CreateDirectory(installerDir);
@@ -660,20 +679,6 @@ public sealed class GameInstaller
         merged["libraries"] = mergedLibraries;
 
         return merged;
-    }
-
-    private static string ToBmclapiUrl(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return url;
-        }
-
-        return url
-            .Replace("https://piston-meta.mojang.com", "https://bmclapi2.bangbang93.com")
-            .Replace("https://launchermeta.mojang.com", "https://bmclapi2.bangbang93.com")
-            .Replace("https://libraries.minecraft.net", "https://bmclapi2.bangbang93.com/maven")
-            .Replace("https://resources.download.minecraft.net", "https://bmclapi2.bangbang93.com/assets");
     }
 
     private async Task<JsonObject> FetchJsonObjectAsync(

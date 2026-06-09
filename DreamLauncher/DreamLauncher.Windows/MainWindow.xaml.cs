@@ -328,6 +328,11 @@ public partial class MainWindow : Window
                 ? Math.Max(1, speedLimit)
                 : null;
 
+            if (DownloadSourceComboBox.SelectedValue is DownloadSource source)
+            {
+                config.Download.Source = source;
+            }
+
             await _configStore.SaveAsync(config);
             await _viewModel.InitializeAsync();
             await LoadInlineSettingsAsync();
@@ -401,7 +406,14 @@ public partial class MainWindow : Window
             });
 
             var config = await _configStore.LoadAsync();
-            await _modpackInstaller.InstallAsync(
+            var source = config.Download.Source;
+            var installer = new ModpackInstaller(
+                _paths,
+                new HttpDownloadService(),
+                new SafeZipExtractor(),
+                new GameInstaller(_paths, new HttpDownloadService(), source),
+                source);
+            await installer.InstallAsync(
                 fileDialog.FileName, instanceName, config, progress, CancellationToken.None);
 
             _viewModel.HasProgress = false;
@@ -744,6 +756,15 @@ public partial class MainWindow : Window
         var config = await _configStore.LoadAsync();
         MainMaxRetryCountTextBox.Text = config.Download.MaxRetryCount.ToString();
         MainSpeedLimitTextBox.Text = config.Download.SpeedLimitKbPerSecond?.ToString() ?? "";
+
+        var sourceOptions = new[]
+        {
+            new { DisplayName = "国内镜像（BMCLAPI）", Value = DownloadSource.Bmclapi },
+            new { DisplayName = "官方源", Value = DownloadSource.Official }
+        };
+        DownloadSourceComboBox.ItemsSource = sourceOptions;
+        DownloadSourceComboBox.SelectedValue = config.Download.Source;
+
         await RefreshJavaRuntimeOptionsAsync(config);
         await RefreshMemoryOptionsAsync(config);
     }

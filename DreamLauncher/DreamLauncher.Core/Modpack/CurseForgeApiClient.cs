@@ -1,19 +1,22 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DreamLauncher.Core.Downloads;
+using DreamLauncher.Models.Config;
 using DreamLauncher.Models.Modpack;
 
 namespace DreamLauncher.Core.Modpack;
 
 public sealed class CurseForgeApiClient
 {
-    private const string OfficialApiBase = "https://api.curseforge.com";
-    private const string MirrorApiBase = "https://mod.mcimirror.top/curseforge";
-
     private readonly HttpClient _httpClient;
     private readonly string? _apiKey;
+    private readonly DownloadSource _source;
 
-    public CurseForgeApiClient(HttpClient? httpClient = null, string? apiKey = null)
+    public CurseForgeApiClient(
+        HttpClient? httpClient = null,
+        string? apiKey = null,
+        DownloadSource source = DownloadSource.Bmclapi)
     {
         _httpClient = httpClient ?? new HttpClient
         {
@@ -21,6 +24,7 @@ public sealed class CurseForgeApiClient
         };
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("DreamLauncher/0.1");
         _apiKey = apiKey;
+        _source = source;
     }
 
     public async Task<IReadOnlyList<ModpackFileEntry>> ResolveFilesAsync(
@@ -55,29 +59,37 @@ public sealed class CurseForgeApiClient
 
         JsonObject? response = null;
 
-        // Try mirror first (no API key required)
+        var primaryBase = DownloadSourceUrls.GetCurseForgeApiBase(_source);
+        var primaryUseApiKey = _source == DownloadSource.Official;
+
+        // Try selected source first
         try
         {
             response = await PostCurseForgeAsync(
-                $"{MirrorApiBase}/v1/mods/files",
+                $"{primaryBase}/v1/mods/files",
                 requestBody,
-                useApiKey: false,
+                useApiKey: primaryUseApiKey,
                 cancellationToken);
         }
         catch
         {
-            // Mirror failed, try official API
+            // Primary failed, try fallback
         }
 
-        // Try official API if mirror failed
+        // Fallback to the other source
         if (response is null)
         {
+            var fallbackBase = _source == DownloadSource.Official
+                ? DownloadSourceUrls.GetCurseForgeApiBase(DownloadSource.Bmclapi)
+                : DownloadSourceUrls.GetCurseForgeApiBase(DownloadSource.Official);
+            var fallbackUseApiKey = _source != DownloadSource.Official;
+
             try
             {
                 response = await PostCurseForgeAsync(
-                    $"{OfficialApiBase}/v1/mods/files",
+                    $"{fallbackBase}/v1/mods/files",
                     requestBody,
-                    useApiKey: true,
+                    useApiKey: fallbackUseApiKey,
                     cancellationToken);
             }
             catch
@@ -148,54 +160,37 @@ public sealed class CurseForgeApiClient
             ?? throw new InvalidDataException("CurseForge API 返回无效 JSON。");
     }
 
-    internal static List<string> BuildDownloadUrls(string originalUrl)
+    private List<string> BuildDownloadUrls(string originalUrl)
     {
         var urls = new List<string>();
 
-        // Add corrected URL
-        var corrected = HandleCurseForgeDownloadUrls(originalUrl);
-        urls.Add(corrected);
+        // Fix overwolf URLs first
+        var corrected = originalUrl
+            .Replace("-service.overwolf.wtf", ".forgecdn.net")
+            .Replace("://media.", "://edge.");
 
-        // Add mirror URL
-        var mirror = ToMirrorUrl(corrected);
-        if (!string.Equals(mirror, corrected, StringComparison.OrdinalIgnoreCase))
+        // Primary: convert to selected source
+        var primary = DownloadSourceUrls.ConvertCurseForgeUrl(_source, corrected);
+        urls.Add(primary);
+
+        // Fallback: the other source
+        var fallbackSource = _source == DownloadSource.Official
+            ? DownloadSource.Bmclapi
+            : DownloadSource.Official;
+        var fallback = DownloadSourceUrls.ConvertCurseForgeUrl(fallbackSource, corrected);
+        if (!string.Equals(fallback, primary, StringComparison.OrdinalIgnoreCase))
         {
-            urls.Add(mirror);
+            urls.Add(fallback);
         }
 
-        // Add original if different
-        if (!string.Equals(originalUrl, corrected, StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(originalUrl, mirror, StringComparison.OrdinalIgnoreCase))
+        // Add original if different from both
+        if (!string.Equals(originalUrl, primary, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(originalUrl, fallback, StringComparison.OrdinalIgnoreCase))
         {
             urls.Add(originalUrl);
         }
 
         return urls;
-    }
-
-    private static string HandleCurseForgeDownloadUrls(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return url;
-        }
-
-        return url
-            .Replace("-service.overwolf.wtf", ".forgecdn.net")
-            .Replace("://media.", "://edge.");
-    }
-
-    private static string ToMirrorUrl(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return url;
-        }
-
-        return url
-            .Replace("cdn.modrinth.com", "mod.mcimirror.top")
-            .Replace("edge.forgecdn.net", "mod.mcimirror.top")
-            .Replace("mediafilez.forgecdn.net", "mod.mcimirror.top");
     }
 
     private static string DetectTargetFolder(JsonObject fileObj)

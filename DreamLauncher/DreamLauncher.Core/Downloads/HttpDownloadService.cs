@@ -124,6 +124,41 @@ public sealed class HttpDownloadService
         }
     }
 
+    public async Task DownloadFileUnsafeAsync(
+        string url,
+        string destinationPath,
+        int maxRetryCount,
+        IProgress<LauncherOperationProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        int? speedLimitKbPerSecond = null)
+    {
+        var source = UrlSecurity.RequireHttps(url, nameof(url));
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+        var retryCount = Math.Max(1, maxRetryCount);
+
+        for (var attempt = 1; attempt <= retryCount; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await DownloadOnceAsync(
+                    source,
+                    destinationPath,
+                    progress,
+                    cancellationToken,
+                    speedLimitKbPerSecond);
+                return;
+            }
+            catch when (attempt < retryCount && !cancellationToken.IsCancellationRequested)
+            {
+                TryDelete(destinationPath);
+                TryDelete(destinationPath + ".download");
+                await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
+            }
+        }
+    }
+
     private async Task DownloadOnceAsync(
         Uri source,
         string destinationPath,

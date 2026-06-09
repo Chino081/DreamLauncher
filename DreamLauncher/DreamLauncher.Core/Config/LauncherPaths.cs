@@ -29,6 +29,7 @@ public sealed class LauncherPaths
         PackDownloadsPath = Path.Combine(DownloadsPath, "packs");
         JavaDownloadsPath = Path.Combine(DownloadsPath, "java");
         ImagesCachePath = Path.Combine(CachePath, "images");
+        ModpackTempPath = Path.Combine(CachePath, "modpacks");
         LogsPath = Path.Combine(RootPath, "logs");
     }
 
@@ -60,6 +61,8 @@ public sealed class LauncherPaths
 
     public string ImagesCachePath { get; }
 
+    public string ModpackTempPath { get; }
+
     public string LogsPath { get; }
 
     public void EnsureCreated()
@@ -70,6 +73,7 @@ public sealed class LauncherPaths
         Directory.CreateDirectory(PackDownloadsPath);
         Directory.CreateDirectory(JavaDownloadsPath);
         Directory.CreateDirectory(ImagesCachePath);
+        Directory.CreateDirectory(ModpackTempPath);
         Directory.CreateDirectory(LogsPath);
     }
 

@@ -43,6 +43,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _hasProgress;
     private bool _isBusy;
     private CancellationTokenSource? _operationCancellation;
+    private LauncherPage _currentPage = LauncherPage.Launch;
     private ImageSource? _currentAccountAvatar;
     private int _avatarLoadVersion;
     private static readonly HttpClient AvatarHttpClient = CreateAvatarHttpClient();
@@ -115,6 +116,12 @@ public sealed class MainWindowViewModel : ObservableObject
                 _ = PersistSelectedClientAsync(value);
             }
         }
+    }
+
+    public LauncherPage CurrentPage
+    {
+        get => _currentPage;
+        set => SetProperty(ref _currentPage, value);
     }
 
     public ClientInstallationViewModel? SelectedDownloadClient

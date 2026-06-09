@@ -16,6 +16,7 @@ using DreamLauncher.Core.Java;
 using DreamLauncher.Core.Minecraft;
 using DreamLauncher.Core.Remote;
 using DreamLauncher.Core.Updates;
+using DreamLauncher.Core.Modpack;
 using DreamLauncher.Models.Clients;
 using DreamLauncher.Models.Config;
 using DreamLauncher.Models.Minecraft;
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
     private readonly JavaRuntimeManager _javaRuntimeManager;
     private readonly LauncherUpdateService _launcherUpdateService;
     private readonly MinecraftContentManager _minecraftContentManager;
+    private readonly ModpackInstaller _modpackInstaller;
     private readonly MainWindowViewModel _viewModel;
     private CancellationTokenSource? _javaRuntimeRefreshCancellation;
     private bool _isUpdatingJavaRuntimeOptions;
@@ -67,6 +69,8 @@ public partial class MainWindow : Window
         var minecraftLaunchService = new MinecraftLaunchService(_paths, downloadService);
         _launcherUpdateService = new LauncherUpdateService(_paths, remoteConfigClient, downloadService);
         _minecraftContentManager = new MinecraftContentManager(_paths);
+        var gameInstaller = new GameInstaller(_paths, downloadService);
+        _modpackInstaller = new ModpackInstaller(_paths, downloadService, extractor, gameInstaller);
 
         _viewModel = new MainWindowViewModel(
             _configStore,
@@ -348,6 +352,76 @@ public partial class MainWindow : Window
     private async void RefreshContent_Click(object sender, RoutedEventArgs e)
     {
         await RefreshGameContentAsync();
+    }
+
+    private async void ImportModpack_Click(object sender, RoutedEventArgs e)
+    {
+        var fileDialog = new OpenFileDialog
+        {
+            Title = "选择整合包文件",
+            Filter = "整合包文件 (*.mrpack;*.zip)|*.mrpack;*.zip|所有文件 (*.*)|*.*",
+            Multiselect = false
+        };
+
+        if (fileDialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var defaultName = Path.GetFileNameWithoutExtension(fileDialog.FileName);
+        var nameDialog = new ModpackImportDialog(defaultName)
+        {
+            Owner = this
+        };
+
+        if (nameDialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var instanceName = nameDialog.InstanceName;
+        if (string.IsNullOrWhiteSpace(instanceName))
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.HasProgress = true;
+            _viewModel.ProgressValue = 0;
+            _viewModel.OperationText = "正在准备导入整合包...";
+
+            var progress = new Progress<LauncherOperationProgress>(p =>
+            {
+                _viewModel.HasProgress = true;
+                _viewModel.ProgressValue = p.Progress.HasValue
+                    ? Math.Clamp(p.Progress.Value * 100, 0, 100)
+                    : 0;
+                _viewModel.OperationText = p.Message ?? "正在处理...";
+            });
+
+            var config = await _configStore.LoadAsync();
+            await _modpackInstaller.InstallAsync(
+                fileDialog.FileName, instanceName, config, progress, CancellationToken.None);
+
+            _viewModel.HasProgress = false;
+            LauncherMessageBox.Show(this,
+                $"整合包 \"{instanceName}\" 导入完成！",
+                "导入整合包",
+                LauncherMessageKind.Success);
+
+            ShowPage("content");
+            ShowContentSubPage(_selectedContentKind);
+            await RefreshGameContentAsync();
+        }
+        catch (Exception ex)
+        {
+            _viewModel.HasProgress = false;
+            LauncherMessageBox.Show(this,
+                $"导入失败：{ex.Message}",
+                "导入整合包",
+                LauncherMessageKind.Warning);
+        }
     }
 
     private void ModSubNav_Click(object sender, RoutedEventArgs e)
@@ -1151,15 +1225,15 @@ public partial class MainWindow : Window
 
     private void ShowPage(string page)
     {
-        LaunchPage.Visibility = page == "launch" ? Visibility.Visible : Visibility.Collapsed;
-        DownloadPage.Visibility = page == "download" ? Visibility.Visible : Visibility.Collapsed;
-        ContentPage.Visibility = page == "content" ? Visibility.Visible : Visibility.Collapsed;
-        SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
-
-        SetNavState(LaunchNavButton, page == "launch");
-        SetNavState(DownloadNavButton, page == "download");
-        SetNavState(ContentNavButton, page == "content");
-        SetNavState(SettingsNavButton, page == "settings");
+        var targetPage = page switch
+        {
+            "launch" => LauncherPage.Launch,
+            "download" => LauncherPage.Download,
+            "content" => LauncherPage.Content,
+            "settings" => LauncherPage.Settings,
+            _ => LauncherPage.Launch
+        };
+        _viewModel.CurrentPage = targetPage;
     }
 
     private void SetNavState(Button button, bool isActive)

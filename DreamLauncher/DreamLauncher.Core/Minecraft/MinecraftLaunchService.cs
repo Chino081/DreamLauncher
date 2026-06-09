@@ -309,6 +309,13 @@ public sealed class MinecraftLaunchService
             Path.Combine(versionsDirectory, client.MinecraftVersion, client.MinecraftVersion + ".json")
         };
 
+        // Modpack instance: version JSON may be at versions/{Id}/{Id}.json
+        if (!string.Equals(client.Id, client.MinecraftVersion, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(client.Id))
+        {
+            candidates.Add(Path.Combine(versionsDirectory, client.Id, client.Id + ".json"));
+        }
+
         if (!string.Equals(client.Loader, "vanilla", StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(client.LoaderVersion))
         {

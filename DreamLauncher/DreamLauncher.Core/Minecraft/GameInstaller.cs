@@ -233,24 +233,44 @@ public sealed class GameInstaller
             }
 
             var artifact = libObj["downloads"]?["artifact"];
-            if (artifact is not JsonObject artifactObj)
+            if (artifact is JsonObject artifactObj)
             {
-                continue;
-            }
+                var path = artifactObj["path"]?.ToString() ?? "";
+                var url = artifactObj["url"]?.ToString() ?? "";
+                var sha1 = artifactObj["sha1"]?.ToString() ?? "";
 
-            var path = artifactObj["path"]?.ToString() ?? "";
-            var url = artifactObj["url"]?.ToString() ?? "";
-            var sha1 = artifactObj["sha1"]?.ToString() ?? "";
-
-            if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(url))
-            {
-                var targetPath = Path.Combine(librariesDir,
-                    path.Replace('/', Path.DirectorySeparatorChar));
-
-                if (!File.Exists(targetPath))
+                if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(url))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                    items.Add((DownloadSourceUrls.ConvertUrl(_source, url), targetPath, sha1));
+                    var targetPath = Path.Combine(librariesDir,
+                        path.Replace('/', Path.DirectorySeparatorChar));
+
+                    if (!File.Exists(targetPath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                        items.Add((DownloadSourceUrls.ConvertUrl(_source, url), targetPath, sha1));
+                    }
+                }
+            }
+            else
+            {
+                // Maven-style library without downloads.artifact (e.g. Fabric loader, ASM libs)
+                // Synthesize download URL from name + url fields
+                var name = libObj["name"]?.ToString() ?? "";
+                var mavenUrl = libObj["url"]?.ToString()?.TrimEnd('/') ?? "";
+                var mavenPath = BuildMavenPath(name);
+                var sha1 = libObj["sha1"]?.ToString() ?? "";
+
+                if (!string.IsNullOrWhiteSpace(mavenPath) && !string.IsNullOrWhiteSpace(mavenUrl))
+                {
+                    var targetPath = Path.Combine(librariesDir,
+                        mavenPath.Replace('/', Path.DirectorySeparatorChar));
+
+                    if (!File.Exists(targetPath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                        var fullUrl = $"{mavenUrl}/{mavenPath}";
+                        items.Add((fullUrl, targetPath, sha1));
+                    }
                 }
             }
         }
@@ -754,6 +774,21 @@ public sealed class GameInstaller
         }
 
         return allowed;
+    }
+
+    private static string? BuildMavenPath(string name)
+    {
+        // Maven coordinate: group:artifact:version[:classifier]
+        var parts = name.Split(':');
+        if (parts.Length < 3)
+        {
+            return null;
+        }
+
+        var groupPath = parts[0].Replace('.', '/');
+        var artifact = parts[1];
+        var version = parts[2];
+        return $"{groupPath}/{artifact}/{version}/{artifact}-{version}.jar";
     }
 
     private static void TryDeleteFile(string path)
